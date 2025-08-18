@@ -1,6 +1,6 @@
 use crate::parser::parse::{parse_from_filepath, ASTFunction, ASTProgram, Expression, ExpressionVariant, Statement, SupportedUnaryOperators};
 use crate::parser::parser_helpers::{ParseError, PoppedTokenContext};
-use crate::tacky::tacky_symbols::TackyInstruction;
+use crate::tacky::tacky_symbols::{TackyInstruction, TackyValue, TackyVariable};
 
 const TAB: &str = "    ";
 
@@ -40,11 +40,13 @@ impl AsmProgram {
     pub fn new(function: AsmFunction) -> AsmProgram {
         AsmProgram { function }
     }
+    /*
     pub fn from_ast_program(ast_program: ASTProgram) -> Self {
         AsmProgram {
             function: AsmFunction::from_function(ast_program.function)
         }
     }
+    */
 }
 impl AsmSymbol for AsmProgram {
     fn to_asm_code(self) -> String {
@@ -77,7 +79,7 @@ impl AsmFunction {
         self.instructions = instructions;
         self
     }
-
+    /*
     pub fn from_function(function: ASTFunction) -> Self {
         // Convert the function to an assembly representation
         let function_name = function.name.name.clone();
@@ -97,6 +99,7 @@ impl AsmFunction {
             .with_added_pop_context(function.pop_context.clone());
         asm_func
     }
+    */
 }
 impl HasPopContexts for AsmFunction {
     fn _get_pop_contexts(&self) -> &Vec<PoppedTokenContext> {
@@ -134,10 +137,49 @@ pub enum Register {
 pub struct PseudoRegister {
     pub(crate) id: u64,
     pub(crate) name: String,
+    pub(crate) pop_contexts: Vec<PoppedTokenContext>,
+    pub(crate) tacky_var: Option<TackyVariable>,
 }
 impl PartialEq for PseudoRegister {
     fn eq(&self, other: &Self) -> bool {
         self.id == other.id
+    }
+}
+impl HasPopContexts for PseudoRegister {
+    fn _get_pop_contexts(&self) -> &Vec<PoppedTokenContext> {
+        &self.pop_contexts
+    }
+    fn _add_pop_context(&mut self, pop_context: PoppedTokenContext) {
+        self.pop_contexts.push(pop_context);
+    }
+}
+impl PseudoRegister {
+    pub fn new(id: u64, name: String) -> PseudoRegister {
+        PseudoRegister {
+            id,
+            name,
+            pop_contexts: vec![],
+            tacky_var: None,
+        }
+    }
+    pub fn set_tacky_var(
+        &mut self, tacky_var: TackyVariable
+    ) {
+        self.tacky_var = Some(tacky_var);
+    }
+    pub fn with_tacky_var_context(
+        mut self, tacky_var: TackyVariable
+    ) -> PseudoRegister {
+        let mut cloned = self.clone();
+        cloned.set_tacky_var(tacky_var);
+        cloned
+    }
+
+    pub fn from_tacky_var(tacky_var: TackyVariable) -> PseudoRegister {
+        let cloned_var = tacky_var.clone();
+        let mut pseudo_register = PseudoRegister::new(tacky_var.id, tacky_var.name);
+        pseudo_register.set_tacky_var(cloned_var);
+        pseudo_register
     }
 }
 
@@ -170,8 +212,22 @@ impl AsmInstruction {
                 todo!()
             },
             TackyInstruction::Return(tacky_value) => {
+                let src_operand = match tacky_value {
+                    TackyValue::Constant(ast_constant) => {
+                        let value = ast_constant.to_u64().unwrap();
+                        let asm_value = AsmImmediateValue::new(value)
+                            .with_added_pop_context(ast_constant.pop_context.clone());
+                        AsmOperand::ImmediateValue(asm_value)
+                    },
+                    TackyValue::Var(tacky_var) => {
+                        // Handle variable return case
+                        AsmOperand::Pseudo(PseudoRegister::from_tacky_var(tacky_var))
+                    },
+                };
+                let dst_operand = AsmOperand::Register(Register::EAX);
+                let mov_instruction = MovInstruction::new(src_operand, dst_operand);
                 vec![
-                    MovInstruction::new(),
+                    AsmInstruction::Mov(mov_instruction),
                     AsmInstruction::Ret
                 ]
             },
