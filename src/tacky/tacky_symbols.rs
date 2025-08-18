@@ -4,7 +4,7 @@ use crate::parser::parse::{
 };
 use crate::parser::parser_helpers::{ParseError, PoppedTokenContext};
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct TackyVariable {
     pub id: u64,
     pub name: String,
@@ -12,6 +12,11 @@ pub struct TackyVariable {
 impl TackyVariable {
     pub fn new(id: u64) -> TackyVariable {
         TackyVariable { id, name: "".to_string() }
+    }
+}
+impl PartialEq for TackyVariable {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
     }
 }
 

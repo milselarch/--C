@@ -1,5 +1,6 @@
-use crate::parser::parse::{parse_from_filepath, ASTFunction, ASTProgram, Expression, ExpressionVariant, Statement};
+use crate::parser::parse::{parse_from_filepath, ASTFunction, ASTProgram, Expression, ExpressionVariant, Statement, SupportedUnaryOperators};
 use crate::parser::parser_helpers::{ParseError, PoppedTokenContext};
+use crate::tacky::tacky_symbols::TackyInstruction;
 
 const TAB: &str = "    ";
 
@@ -124,8 +125,32 @@ impl AsmSymbol for AsmFunction {
 }
 
 #[derive(Clone, Debug)]
+pub enum Register {
+    EAX,
+    R10D
+}
+
+#[derive(Debug, Clone)]
+pub struct PseudoRegister {
+    pub(crate) id: u64,
+    pub(crate) name: String,
+}
+impl PartialEq for PseudoRegister {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct AsmUnaryInstruction {
+    operator: SupportedUnaryOperators,
+    operand: AsmOperand,
+}
+
+#[derive(Clone, Debug)]
 pub enum AsmInstruction {
     Mov(MovInstruction),
+    Unary(AsmUnaryInstruction),
     Ret,
 }
 impl AsmSymbol for AsmInstruction {
@@ -136,11 +161,33 @@ impl AsmSymbol for AsmInstruction {
         }
     }
 }
+impl AsmInstruction {
+    pub fn from_tacky_instruction(
+        tacky_instruction: TackyInstruction
+    ) -> Vec<Self> {
+        match tacky_instruction {
+            TackyInstruction::UnaryInstruction(unary_instruction) => {
+                todo!()
+            },
+            TackyInstruction::Return(tacky_value) => {
+                vec![
+                    MovInstruction::new(),
+                    AsmInstruction::Ret
+                ]
+            },
+        }
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct MovInstruction {
-    pub(crate) destination: AsmOperand,
     pub(crate) source: AsmOperand,
+    pub(crate) destination: AsmOperand,
+}
+impl MovInstruction {
+    pub fn new(source: AsmOperand, destination: AsmOperand) -> Self {
+        MovInstruction { source, destination }
+    }
 }
 impl AsmSymbol for MovInstruction {
     fn to_asm_code(self) -> String {
@@ -155,7 +202,9 @@ impl AsmSymbol for MovInstruction {
 #[derive(Clone, Debug)]
 pub enum AsmOperand {
     ImmediateValue(AsmImmediateValue),
-    Register,
+    Register(Register),
+    Pseudo(PseudoRegister),
+    Stack(u64)
 }
 impl AsmSymbol for AsmOperand {
     fn to_asm_code(self) -> String {
