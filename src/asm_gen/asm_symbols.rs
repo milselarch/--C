@@ -88,6 +88,13 @@ impl AsmFunction {
         }
         asm_function
     }
+    pub fn to_stack_allocated(
+        &self, stack_value: u64, offset_size: u64
+    ) {
+        for instruction in &self.instructions {
+
+        }
+    }
 }
 impl HasPopContexts for AsmFunction {
     fn _get_pop_contexts(&self) -> &Vec<PoppedTokenContext> {
@@ -169,6 +176,11 @@ impl PseudoRegister {
         pseudo_register.set_tacky_var(cloned_var);
         pseudo_register
     }
+    pub fn to_stack_allocated(
+        self, stack_value: u64, offset_size: u64
+    ) -> StackAllocation {
+
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -221,6 +233,22 @@ impl AsmInstruction {
             },
         }
     }
+    pub fn to_stack_allocated(
+        &self, stack_value: u64, offset_size: u64
+    ) -> Self {
+        match self {
+            AsmInstruction::Mov(mov_instruction) => {
+                let src = mov_instruction.source.clone();
+                let dst = AsmOperand::Stack(stack_size);
+                AsmInstruction::Mov(MovInstruction::new(src, dst))
+            },
+            AsmInstruction::Ret => {
+                // Ret instruction does not need to be stack allocated
+                self.clone()
+            },
+            _ => panic!("Unsupported instruction for stack allocation"),
+        }
+    })
 }
 
 #[derive(Clone, Debug)]
@@ -244,11 +272,30 @@ impl AsmSymbol for MovInstruction {
 }
 
 #[derive(Clone, Debug)]
+pub struct StackAllocation {
+    pub(crate) offset: u64,
+    pub(crate) pop_contexts: Vec<PoppedTokenContext>,
+    pub(crate) tacky_var: Option<TackyVariable>,
+}
+impl StackAllocation {
+    pub fn from_pseudo_register(
+        pseudo_register: PseudoRegister, stack_value: u64
+    ) -> Self {
+        let mut stack_allocation = StackAllocation {
+            offset: stack_value,
+            pop_contexts: pseudo_register.pop_contexts.clone(),
+            tacky_var: pseudo_register.tacky_var.clone(),
+        };
+        stack_allocation
+    }
+}
+
+#[derive(Clone, Debug)]
 pub enum AsmOperand {
     ImmediateValue(AsmImmediateValue),
     Register(Register),
     Pseudo(PseudoRegister),
-    Stack(u64)
+    Stack(StackAllocation)
 }
 impl AsmSymbol for AsmOperand {
     fn to_asm_code(self) -> String {
@@ -269,6 +316,27 @@ impl AsmOperand {
             TackyValue::Var(tacky_var) => {
                 AsmOperand::Pseudo(PseudoRegister::from_tacky_var(tacky_var))
             },
+        }
+    }
+    pub fn to_stack_allocated(
+        self, stack_value: u64
+    ) -> (Self, bool) {
+        /*
+        Converts the AsmOperand to a stack allocation if it is a pseudo register.
+        returns a tuple containing the new AsmOperand and a boolean indicating
+        whether it was converted to a stack allocation.
+        */
+        match self {
+            AsmOperand::Pseudo(pseudo_register) => {
+                let allocation = StackAllocation::from_pseudo_register(
+                    pseudo_register, stack_value
+                );
+                let new_instruction = AsmOperand::Stack(allocation);
+                (new_instruction, true)
+            },
+            other => {
+                (other.clone(), false)
+            }
         }
     }
 }
