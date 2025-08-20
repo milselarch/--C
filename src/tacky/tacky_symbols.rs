@@ -104,6 +104,9 @@ impl TackyFunction {
             pop_context: function.pop_context.clone()
         }
     }
+    pub fn name_to_string(&self) -> String {
+        self.name.name_to_string()
+    }
 }
 
 pub struct TackyProgram {

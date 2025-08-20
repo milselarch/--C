@@ -1,6 +1,6 @@
 use crate::parser::parse::{parse_from_filepath, ASTFunction, ASTProgram, Expression, ExpressionVariant, Statement, SupportedUnaryOperators};
 use crate::parser::parser_helpers::{ParseError, PoppedTokenContext};
-use crate::tacky::tacky_symbols::{TackyInstruction, TackyValue, TackyVariable};
+use crate::tacky::tacky_symbols::{TackyFunction, TackyInstruction, TackyProgram, TackyValue, TackyVariable};
 
 const TAB: &str = "    ";
 
@@ -40,13 +40,11 @@ impl AsmProgram {
     pub fn new(function: AsmFunction) -> AsmProgram {
         AsmProgram { function }
     }
-    /*
-    pub fn from_ast_program(ast_program: ASTProgram) -> Self {
-        AsmProgram {
-            function: AsmFunction::from_function(ast_program.function)
-        }
+    pub fn from_tacky_program(
+        tacky_program: TackyProgram
+    ) -> Self {
+        Self::new(AsmFunction::from_tacky_function(tacky_program.function))
     }
-    */
 }
 impl AsmSymbol for AsmProgram {
     fn to_asm_code(self) -> String {
@@ -79,27 +77,17 @@ impl AsmFunction {
         self.instructions = instructions;
         self
     }
-    /*
-    pub fn from_function(function: ASTFunction) -> Self {
-        // Convert the function to an assembly representation
-        let function_name = function.name.name.clone();
-        let mut instructions: Vec<AsmInstruction> = vec![];
-        let body_expression =
-            AsmImmediateValue::from_statement(function.body);
-
-        instructions.push(AsmInstruction::Mov(
-            MovInstruction {
-                source: AsmOperand::ImmediateValue(body_expression),
-                destination: AsmOperand::Register
-            })
-        );
-        instructions.push(AsmInstruction::Ret);
-        let asm_func = AsmFunction::new(function_name)
-            .add_instructions(instructions)
-            .with_added_pop_context(function.pop_context.clone());
-        asm_func
+    pub fn from_tacky_function(
+        tacky_function: TackyFunction
+    ) -> AsmFunction {
+        let mut asm_function = AsmFunction::new(tacky_function.name_to_string());
+        for tacky_instruction in tacky_function.instructions {
+            let asm_instructions =
+                AsmInstruction::from_tacky_instruction(tacky_instruction);
+            asm_function.instructions.extend(asm_instructions);
+        }
+        asm_function
     }
-    */
 }
 impl HasPopContexts for AsmFunction {
     fn _get_pop_contexts(&self) -> &Vec<PoppedTokenContext> {
@@ -267,6 +255,20 @@ impl AsmSymbol for AsmOperand {
         match self {
             AsmOperand::ImmediateValue(value) => value.to_asm_code(),
             AsmOperand::Register => "%eax".to_string(),
+        }
+    }
+}
+impl AsmOperand {
+    pub fn from_tacky_value(tacky_value: TackyValue) -> Self {
+        match tacky_value {
+            TackyValue::Constant(ast_constant) => {
+                let value = ast_constant.to_u64().unwrap();
+                AsmOperand::ImmediateValue(AsmImmediateValue::new(value)
+                    .with_added_pop_context(ast_constant.pop_context.clone()))
+            },
+            TackyValue::Var(tacky_var) => {
+                AsmOperand::Pseudo(PseudoRegister::from_tacky_var(tacky_var))
+            },
         }
     }
 }

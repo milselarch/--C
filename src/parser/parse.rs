@@ -19,7 +19,9 @@ impl Identifier {
             name: identifier,
         }
     }
-
+    pub(crate) fn name_to_string(&self) -> String {
+        self.name.clone()
+    }
     fn parse_tokens(
         tokens: &mut TokenStack
     ) -> Result<Identifier, ParseError> {
