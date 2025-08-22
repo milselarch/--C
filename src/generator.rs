@@ -40,15 +40,23 @@ pub fn compile_from_filepath(
     let asm_program = match asm_gen_result {
         Ok(program) => program,
         Err(err) => {
-            eprintln!("Error generating assembly: {}", err);
+            eprintln!("Error generating assembly: {:?}", err);
             std::process::exit(1);
         }
     };
 
-    let asm_code = asm_program.to_asm_code();
+    let asm_code_res = asm_program.to_asm_code();
+    let asm_code = match asm_code_res {
+        Ok(code) => code,
+        Err(err) => {
+            eprintln!("Error converting to assembly code: {:?}", err);
+            std::process::exit(1);
+        }
+    };
+    
     println!("\nGenerated assembly code:");
     println!("---------------------------------");
-    println!("{}", asm_code);
+    println!("{:?}", asm_code);
 
     let file_res = OpenOptions::new()
         .write(true)

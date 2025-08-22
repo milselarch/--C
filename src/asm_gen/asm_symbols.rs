@@ -1,11 +1,27 @@
-use crate::parser::parse::{parse_from_filepath, ASTFunction, ASTProgram, Expression, ExpressionVariant, Statement, SupportedUnaryOperators};
+use std::iter::Scan;
+use crate::parser::parse::{
+    parse_from_filepath, Expression, ExpressionVariant,
+    Statement, SupportedUnaryOperators
+};
 use crate::parser::parser_helpers::{ParseError, PoppedTokenContext};
-use crate::tacky::tacky_symbols::{TackyFunction, TackyInstruction, TackyProgram, TackyValue, TackyVariable};
+use crate::tacky::tacky_symbols::{tacky_gen_from_filepath, TackyFunction, TackyInstruction, TackyProgram, TackyValue, TackyVariable};
 
 const TAB: &str = "    ";
+const SCRATCH_REGISTER: &str = "%r10d";
+const STACK_REGISTER: &str = "%rsp";
+// base of current stack frame
+const BASE_REGISTER: &str = "%rbp";
+
+
+#[derive(Debug)]
+pub enum AsmGenError {
+    InvalidInstructionType(String),
+    UnsupportedInstruction(String),
+    ParseError(ParseError)
+}
 
 pub trait AsmSymbol {
-    fn to_asm_code(self) -> String;
+    fn to_asm_code(self) -> Result<String, AsmGenError>;
 }
 pub trait HasPopContexts: Clone {
     fn _get_pop_contexts(&self) -> &Vec<PoppedTokenContext>;
@@ -32,6 +48,12 @@ pub trait HasPopContexts: Clone {
         }).collect::<Vec<String>>().join("\n") + "\n"
     }
 }
+pub trait ToStackAllocated {
+    fn to_stack_allocated(
+        &self, stack_value: u64, offset_size: u64
+        // returns a tuple of (Self, new stack_value)
+    ) -> (Self, u64) where Self: Sized;
+}
 
 pub struct AsmProgram {
     pub(crate) function: AsmFunction,
@@ -47,10 +69,10 @@ impl AsmProgram {
     }
 }
 impl AsmSymbol for AsmProgram {
-    fn to_asm_code(self) -> String {
-        let mut code = self.function.to_asm_code();
+    fn to_asm_code(self) -> Result<String, AsmGenError> {
+        let mut code = self.function.to_asm_code()?;
         code.push_str(".section .note.GNU-stack,\"\",@progbits\n");
-        code
+        Ok(code)
     }
 }
 
@@ -88,13 +110,6 @@ impl AsmFunction {
         }
         asm_function
     }
-    pub fn to_stack_allocated(
-        &self, stack_value: u64, offset_size: u64
-    ) {
-        for instruction in &self.instructions {
-
-        }
-    }
 }
 impl HasPopContexts for AsmFunction {
     fn _get_pop_contexts(&self) -> &Vec<PoppedTokenContext> {
@@ -105,7 +120,7 @@ impl HasPopContexts for AsmFunction {
     }
 }
 impl AsmSymbol for AsmFunction {
-    fn to_asm_code(self) -> String {
+    fn to_asm_code(self) -> Result<String, AsmGenError> {
         let mut code = "".to_string();
 
         code.push_str(&format!("{TAB}.globl {}\n", self.name));
@@ -113,12 +128,34 @@ impl AsmSymbol for AsmFunction {
         code.push_str(&format!("{}:\n", self.name));
 
         for instruction in self.instructions {
-            let inner_code = &instruction.to_asm_code();
+            let inner_code = &instruction.to_asm_code()?;
             let indented_inner_code = indent::indent_all_with(TAB, inner_code);
             // println!("Indented inner code: {}", indented_inner_code);
             code.push_str(&*indented_inner_code);
         }
-        code
+        Ok(code)
+    }
+}
+impl ToStackAllocated for AsmFunction {
+    fn to_stack_allocated(
+        &self, stack_value: u64, offset_size: u64
+    ) -> (Self, u64) {
+        let mut new_instructions = vec![];
+        let mut new_stack_value = stack_value;
+
+        for instruction in &self.instructions {
+            let (new_instruction, updated_stack_value) =
+                instruction.to_stack_allocated(new_stack_value, offset_size);
+            new_instructions.push(new_instruction);
+            new_stack_value = updated_stack_value;
+        }
+
+        let new_function = AsmFunction {
+            name: self.name.clone(),
+            instructions: new_instructions,
+            pop_contexts: self.pop_contexts.clone(),
+        };
+        (new_function, new_stack_value)
     }
 }
 
@@ -126,6 +163,14 @@ impl AsmSymbol for AsmFunction {
 pub enum Register {
     EAX,
     R10D
+}
+impl AsmSymbol for Register {
+    fn to_asm_code(self) -> Result<String, AsmGenError> {
+        match self {
+            Register::EAX => Ok("%eax".to_string()),
+            Register::R10D => Ok("%r10d".to_string()),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -176,10 +221,12 @@ impl PseudoRegister {
         pseudo_register.set_tacky_var(cloned_var);
         pseudo_register
     }
-    pub fn to_stack_allocated(
+    pub fn to_stack_allocation(
         self, stack_value: u64, offset_size: u64
-    ) -> StackAllocation {
-
+    ) -> StackAddress {
+        StackAddress::from_pseudo_register(
+            &self, stack_value, offset_size
+        )
     }
 }
 
@@ -188,18 +235,56 @@ pub struct AsmUnaryInstruction {
     operator: SupportedUnaryOperators,
     operand: AsmOperand,
 }
+impl ToStackAllocated for AsmUnaryInstruction {
+    fn to_stack_allocated(
+        &self, stack_value: u64, offset_size: u64
+    ) -> (Self, u64) {
+        let (operand, new_stack_value) =
+            self.operand.to_stack_allocated(stack_value, offset_size);
+        let new_instruction = AsmUnaryInstruction {
+            operator: self.operator.clone(),
+            operand,
+        };
+        (new_instruction, new_stack_value)
+    }
+}
+impl AsmSymbol for AsmUnaryInstruction {
+    fn to_asm_code(self) -> Result<String, AsmGenError> {
+        let operand_asm = self.operand.to_asm_code()?;
+        match self.operator {
+            SupportedUnaryOperators::Minus => {
+                Ok(format!("negl {}\n", operand_asm))
+            },
+            SupportedUnaryOperators::BitwiseNot => {
+                Ok(format!("notl {}\n", operand_asm))
+            },
+            _ => Err(AsmGenError::UnsupportedInstruction(
+                format!("Unsupported unary operator: {:?}", self.operator)
+            )),
+        }
+    }
+}
 
 #[derive(Clone, Debug)]
 pub enum AsmInstruction {
     Mov(MovInstruction),
     Unary(AsmUnaryInstruction),
+    AllocateStack(StackAllocation),
     Ret,
 }
 impl AsmSymbol for AsmInstruction {
-    fn to_asm_code(self) -> String {
+    fn to_asm_code(self) -> Result<String, AsmGenError> {
         match self {
-            AsmInstruction::Mov(mov_instruction) => mov_instruction.to_asm_code(),
-            AsmInstruction::Ret => "ret\n".to_string(),
+            AsmInstruction::Mov(mov_instruction) => {
+                Ok(mov_instruction.to_asm_code()?)
+            },
+            AsmInstruction::Unary(unary_instruction) => {
+                Ok(unary_instruction.to_asm_code()?)
+            },
+            AsmInstruction::AllocateStack(stack_allocation) => {
+                Ok(stack_allocation.to_asm_code()?)
+            },
+            AsmInstruction::Ret => Ok("ret\n".to_string()),
         }
     }
 }
@@ -233,22 +318,28 @@ impl AsmInstruction {
             },
         }
     }
-    pub fn to_stack_allocated(
+}
+impl ToStackAllocated for AsmInstruction {
+    fn to_stack_allocated(
         &self, stack_value: u64, offset_size: u64
-    ) -> Self {
+    ) -> (Self, u64) {
         match self {
             AsmInstruction::Mov(mov_instruction) => {
-                let src = mov_instruction.source.clone();
-                let dst = AsmOperand::Stack(stack_size);
-                AsmInstruction::Mov(MovInstruction::new(src, dst))
+                let (new_mov_instruction, new_stack_value) =
+                    mov_instruction.to_stack_allocated(stack_value, offset_size);
+                (AsmInstruction::Mov(new_mov_instruction), new_stack_value)
             },
-            AsmInstruction::Ret => {
-                // Ret instruction does not need to be stack allocated
-                self.clone()
+            AsmInstruction::Unary(unary_instruction) => {
+                let (new_unary_instruction, new_stack_value) =
+                    unary_instruction.to_stack_allocated(stack_value, offset_size);
+                (AsmInstruction::Unary(new_unary_instruction), new_stack_value)
             },
-            _ => panic!("Unsupported instruction for stack allocation"),
+            others => {
+                // For other instructions, we assume they do not require stack allocation
+                (others.clone(), stack_value)
+            }
         }
-    })
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -262,50 +353,117 @@ impl MovInstruction {
     }
 }
 impl AsmSymbol for MovInstruction {
-    fn to_asm_code(self) -> String {
-        format!(
-            "mov {}, {}\n",
-            self.source.to_asm_code(),
-            self.destination.to_asm_code()
-        )
+    fn to_asm_code(self) -> Result<String, AsmGenError> {
+        let is_src_stack_alloc = self.source.is_stack_alloc();
+        let is_dst_stack_alloc = self.destination.is_stack_alloc();
+        let src_asm = self.source.to_asm_code()?;
+        let dst_asm = self.destination.to_asm_code()?;
+
+        if is_src_stack_alloc && is_dst_stack_alloc {
+            let mut asm_code: String = String::new();
+            asm_code.push_str(&format!("movl {src_asm}, {SCRATCH_REGISTER}\n"));
+            asm_code.push_str(&format!("movl {SCRATCH_REGISTER}, {dst_asm}"));
+            return Ok(asm_code);
+        } else {
+            Ok(format!("mov {}, {}\n", src_asm, dst_asm))
+        }
+    }
+}
+impl ToStackAllocated for MovInstruction {
+    fn to_stack_allocated(
+        &self, stack_value: u64, offset_size: u64
+    ) -> (Self, u64) {
+        let (source, stack_value) =
+            self.source.to_stack_allocated(stack_value, offset_size);
+        let (destination, stack_value) =
+            self.destination.to_stack_allocated(stack_value, offset_size);
+
+        let new_instruction = MovInstruction { source, destination };
+        (new_instruction, stack_value)
     }
 }
 
 #[derive(Clone, Debug)]
 pub struct StackAllocation {
     pub(crate) offset: u64,
+    pub(crate) offset_size: u64,
     pub(crate) pop_contexts: Vec<PoppedTokenContext>,
     pub(crate) tacky_var: Option<TackyVariable>,
 }
-impl StackAllocation {
+impl AsmSymbol for StackAllocation {
+    fn to_asm_code(self) -> Result<String, AsmGenError> {
+        Ok(format!("subq ${}, {STACK_REGISTER}", self.offset))
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct StackAddress {
+    pub(crate) offset: u64,
+    pub(crate) offset_size: u64,
+    pub(crate) pop_contexts: Vec<PoppedTokenContext>,
+    pub(crate) tacky_var: Option<TackyVariable>,
+}
+impl StackAddress {
+    pub fn new(offset: u64, offset_size: u64) -> Self {
+        StackAddress {
+            offset, offset_size, pop_contexts: vec![],
+            tacky_var: None
+        }
+    }
     pub fn from_pseudo_register(
-        pseudo_register: PseudoRegister, stack_value: u64
+        pseudo_register: &PseudoRegister, stack_value: u64,
+        offset_size: u64
     ) -> Self {
-        let mut stack_allocation = StackAllocation {
+        let mut stack_address = StackAddress {
             offset: stack_value,
+            offset_size,
             pop_contexts: pseudo_register.pop_contexts.clone(),
             tacky_var: pseudo_register.tacky_var.clone(),
         };
-        stack_allocation
+        stack_address
     }
 }
+impl AsmSymbol for StackAddress {
+    fn to_asm_code(self) -> Result<String, AsmGenError> {
+        Ok(format!("${}{BASE_REGISTER}", self.offset))
+    }
+}
+
 
 #[derive(Clone, Debug)]
 pub enum AsmOperand {
     ImmediateValue(AsmImmediateValue),
     Register(Register),
     Pseudo(PseudoRegister),
-    Stack(StackAllocation)
+    Stack(StackAddress)
 }
 impl AsmSymbol for AsmOperand {
-    fn to_asm_code(self) -> String {
+    fn to_asm_code(self) -> Result<String, AsmGenError> {
         match self {
-            AsmOperand::ImmediateValue(value) => value.to_asm_code(),
-            AsmOperand::Register => "%eax".to_string(),
+            AsmOperand::ImmediateValue(value) => {
+                Ok(value.value.to_string())
+            },
+            AsmOperand::Register(register) => {
+                Ok(register.to_asm_code()?)
+            },
+            AsmOperand::Pseudo(pseudo_register) => {
+                Err(AsmGenError::InvalidInstructionType(
+                    format!(
+                        "Pseudo register {} not supported in assembly",
+                        pseudo_register.name
+                    )
+                ))
+            },
+            AsmOperand::Stack(stack_address) => {
+                Ok(stack_address.to_asm_code()?)
+            }
         }
     }
 }
 impl AsmOperand {
+    pub fn is_stack_alloc(&self) -> bool {
+        matches!(self, AsmOperand::Stack(_))
+    }
     pub fn from_tacky_value(tacky_value: TackyValue) -> Self {
         match tacky_value {
             TackyValue::Constant(ast_constant) => {
@@ -318,9 +476,11 @@ impl AsmOperand {
             },
         }
     }
-    pub fn to_stack_allocated(
-        self, stack_value: u64
-    ) -> (Self, bool) {
+}
+impl ToStackAllocated for AsmOperand {
+    fn to_stack_allocated(
+        &self, stack_value: u64, offset_size: u64
+    ) -> (Self, u64) {
         /*
         Converts the AsmOperand to a stack allocation if it is a pseudo register.
         returns a tuple containing the new AsmOperand and a boolean indicating
@@ -328,14 +488,14 @@ impl AsmOperand {
         */
         match self {
             AsmOperand::Pseudo(pseudo_register) => {
-                let allocation = StackAllocation::from_pseudo_register(
-                    pseudo_register, stack_value
+                let stack_address = StackAddress::from_pseudo_register(
+                    pseudo_register, stack_value, offset_size
                 );
-                let new_instruction = AsmOperand::Stack(allocation);
-                (new_instruction, true)
+                let new_instruction = AsmOperand::Stack(stack_address);
+                (new_instruction, stack_value + offset_size)
             },
             other => {
-                (other.clone(), false)
+                (other.clone(), stack_value)
             }
         }
     }
@@ -381,8 +541,8 @@ impl HasPopContexts for AsmImmediateValue {
     }
 }
 impl AsmSymbol for AsmImmediateValue {
-    fn to_asm_code(self) -> String {
-        format!("${}", self.value)
+    fn to_asm_code(self) -> Result<String, AsmGenError> {
+        Ok(format!("${}", self.value))
     }
 }
 
@@ -390,12 +550,7 @@ impl AsmSymbol for AsmImmediateValue {
 pub fn asm_gen_from_filepath(
     file_path: &str, verbose: bool
 ) -> Result<AsmProgram, ParseError> {
-    let parse_result = parse_from_filepath(file_path, verbose);
-    let program = match parse_result {
-        Ok(program) => program,
-        Err(err) => return Err(err),
-    };
-
-    let asm_program = AsmProgram::from_ast_program(program);
+    let tacky_program = tacky_gen_from_filepath(file_path, verbose)?;
+    let asm_program = AsmProgram::from_tacky_program(tacky_program);
     Ok(asm_program)
 }

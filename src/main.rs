@@ -94,7 +94,7 @@ fn main() -> io::Result<()> {
             let asm_gen_result = 
                 asm_gen::asm_symbols::asm_gen_from_filepath(&args[2], true);
             if asm_gen_result.is_err() {
-                eprintln!("Assembly Generation Error: {}", asm_gen_result.err().unwrap());
+                eprintln!("Assembly Generation Error: {:?}", asm_gen_result.err().unwrap());
                 std::process::exit(1);
             } else {
                 println!("Assembly Generation successful!");
