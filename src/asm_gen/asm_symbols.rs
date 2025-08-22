@@ -294,7 +294,12 @@ impl AsmInstruction {
     ) -> Vec<Self> {
         match tacky_instruction {
             TackyInstruction::UnaryInstruction(unary_instruction) => {
-                todo!()
+                let src_operand = AsmOperand::from_tacky_value(unary_instruction.src);
+                let unary_instruction = AsmUnaryInstruction {
+                    operator: unary_instruction.operator,
+                    operand: src_operand,
+                };
+                vec![AsmInstruction::Unary(unary_instruction)]
             },
             TackyInstruction::Return(tacky_value) => {
                 let src_operand = match tacky_value {
