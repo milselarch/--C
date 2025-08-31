@@ -1,10 +1,11 @@
-use std::iter::Scan;
 use crate::parser::parse::{
-    parse_from_filepath, Expression, ExpressionVariant,
-    Statement, SupportedUnaryOperators
+    Expression, ExpressionVariant, Statement, SupportedUnaryOperators
 };
 use crate::parser::parser_helpers::{ParseError, PoppedTokenContext};
-use crate::tacky::tacky_symbols::{tacky_gen_from_filepath, TackyFunction, TackyInstruction, TackyProgram, TackyValue, TackyVariable};
+use crate::tacky::tacky_symbols::{
+    tacky_gen_from_filepath, TackyFunction, TackyInstruction, TackyProgram,
+    TackyValue, TackyVariable
+};
 
 const TAB: &str = "    ";
 const SCRATCH_REGISTER: &str = "%r10d";
@@ -67,14 +68,30 @@ impl AsmProgram {
     ) -> Self {
         Self::new(AsmFunction::from_tacky_function(tacky_program.function))
     }
-}
-impl AsmSymbol for AsmProgram {
-    fn to_asm_code(self) -> Result<String, AsmGenError> {
+    fn _to_asm_code(self) -> Result<String, AsmGenError> {
         let mut code = self.function.to_asm_code()?;
         code.push_str(".section .note.GNU-stack,\"\",@progbits\n");
         Ok(code)
     }
 }
+impl AsmSymbol for AsmProgram {
+    fn to_asm_code(self) -> Result<String, AsmGenError> {
+        let stack_allocated_program =
+            self.to_stack_allocated(0, 4).0;
+        Ok(stack_allocated_program._to_asm_code()?)
+    }
+}
+impl ToStackAllocated for AsmProgram {
+    fn to_stack_allocated(
+        &self, stack_value: u64, offset_size: u64
+    ) -> (Self, u64) {
+        let (new_function, new_stack_value) =
+            self.function.to_stack_allocated(stack_value, offset_size);
+        let new_program = AsmProgram {
+            function: new_function,
+        };
+        (new_program, new_stack_value)
+    }}
 
 #[derive(Clone, Debug)]
 pub struct AsmFunction {
@@ -123,7 +140,7 @@ impl AsmSymbol for AsmFunction {
     fn to_asm_code(self) -> Result<String, AsmGenError> {
         let mut code = "".to_string();
 
-        code.push_str(&format!("{TAB}.globl {}\n", self.name));
+        code.push_str(&format!("{TAB}.globl {}", self.name));
         code.push_str(&*self.contexts_to_string());
         code.push_str(&format!("{}:\n", self.name));
 
@@ -132,6 +149,7 @@ impl AsmSymbol for AsmFunction {
             let indented_inner_code = indent::indent_all_with(TAB, inner_code);
             // println!("Indented inner code: {}", indented_inner_code);
             code.push_str(&*indented_inner_code);
+            code.push_str("\n");
         }
         Ok(code)
     }
@@ -256,7 +274,7 @@ impl AsmSymbol for AsmUnaryInstruction {
                 Ok(format!("negl {}\n", operand_asm))
             },
             SupportedUnaryOperators::BitwiseNot => {
-                Ok(format!("notl {}\n", operand_asm))
+                Ok(format!("notl {}", operand_asm))
             },
             _ => Err(AsmGenError::UnsupportedInstruction(
                 format!("Unsupported unary operator: {:?}", self.operator)
@@ -361,6 +379,7 @@ impl AsmSymbol for MovInstruction {
     fn to_asm_code(self) -> Result<String, AsmGenError> {
         let is_src_stack_alloc = self.source.is_stack_alloc();
         let is_dst_stack_alloc = self.destination.is_stack_alloc();
+        println!("MOV_PRE {}", format!("{:?}, {:?}", &self.source, &self.destination));
         let src_asm = self.source.to_asm_code()?;
         let dst_asm = self.destination.to_asm_code()?;
 
@@ -368,9 +387,9 @@ impl AsmSymbol for MovInstruction {
             let mut asm_code: String = String::new();
             asm_code.push_str(&format!("movl {src_asm}, {SCRATCH_REGISTER}\n"));
             asm_code.push_str(&format!("movl {SCRATCH_REGISTER}, {dst_asm}"));
-            return Ok(asm_code);
+            Ok(asm_code)
         } else {
-            Ok(format!("mov {}, {}\n", src_asm, dst_asm))
+            Ok(format!("mov {}, {}", src_asm, dst_asm))
         }
     }
 }
@@ -419,7 +438,7 @@ impl StackAddress {
         pseudo_register: &PseudoRegister, stack_value: u64,
         offset_size: u64
     ) -> Self {
-        let mut stack_address = StackAddress {
+        let stack_address = StackAddress {
             offset: stack_value,
             offset_size,
             pop_contexts: pseudo_register.pop_contexts.clone(),
@@ -446,7 +465,7 @@ impl AsmSymbol for AsmOperand {
     fn to_asm_code(self) -> Result<String, AsmGenError> {
         match self {
             AsmOperand::ImmediateValue(value) => {
-                Ok(value.value.to_string())
+                Ok(value.to_asm_code()?)
             },
             AsmOperand::Register(register) => {
                 Ok(register.to_asm_code()?)

@@ -56,7 +56,7 @@ pub fn compile_from_filepath(
     
     println!("\nGenerated assembly code:");
     println!("---------------------------------");
-    println!("{:?}", asm_code);
+    println!("{}", asm_code);
 
     let file_res = OpenOptions::new()
         .write(true)
