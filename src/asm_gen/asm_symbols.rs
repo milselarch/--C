@@ -139,6 +139,7 @@ impl HasPopContexts for AsmFunction {
 impl AsmSymbol for AsmFunction {
     fn to_asm_code(self) -> Result<String, AsmGenError> {
         let mut code = "".to_string();
+        println!("ASM_INSTRUCTIONS: {:?}", self.instructions);
 
         code.push_str(&format!("{TAB}.globl {}", self.name));
         code.push_str(&*self.contexts_to_string());
@@ -251,35 +252,43 @@ impl PseudoRegister {
 #[derive(Clone, Debug)]
 pub struct AsmUnaryInstruction {
     operator: SupportedUnaryOperators,
-    operand: AsmOperand,
+    destination: AsmOperand,
+}
+impl AsmUnaryInstruction {
+    fn operator_to_asm_string(
+        operator: SupportedUnaryOperators
+    ) -> Result<String, AsmGenError> {
+        match operator {
+            SupportedUnaryOperators::Minus => Ok("negl".to_string()),
+            SupportedUnaryOperators::BitwiseNot => Ok("notl".to_string()),
+            _ => Err(AsmGenError::UnsupportedInstruction(
+                format!("Unsupported unary operator: {:?}", operator)
+            )),
+        }
+    }
 }
 impl ToStackAllocated for AsmUnaryInstruction {
     fn to_stack_allocated(
         &self, stack_value: u64, offset_size: u64
     ) -> (Self, u64) {
-        let (operand, new_stack_value) =
-            self.operand.to_stack_allocated(stack_value, offset_size);
+        /*
+        We don't return the newly allocated stack value here because
+        the asm stack operation is applied in place.
+        */
+        let (operand, _) =
+            self.destination.to_stack_allocated(stack_value, offset_size);
         let new_instruction = AsmUnaryInstruction {
             operator: self.operator.clone(),
-            operand,
+            destination: operand,
         };
-        (new_instruction, new_stack_value)
+        (new_instruction, stack_value)
     }
 }
 impl AsmSymbol for AsmUnaryInstruction {
     fn to_asm_code(self) -> Result<String, AsmGenError> {
-        let operand_asm = self.operand.to_asm_code()?;
-        match self.operator {
-            SupportedUnaryOperators::Minus => {
-                Ok(format!("negl {}\n", operand_asm))
-            },
-            SupportedUnaryOperators::BitwiseNot => {
-                Ok(format!("notl {}", operand_asm))
-            },
-            _ => Err(AsmGenError::UnsupportedInstruction(
-                format!("Unsupported unary operator: {:?}", self.operator)
-            )),
-        }
+        let operand_asm = self.destination.to_asm_code()?;
+        let operator_asm = Self::operator_to_asm_string(self.operator)?;
+        Ok(format!("{} {}", operator_asm, operand_asm))
     }
 }
 
@@ -313,11 +322,20 @@ impl AsmInstruction {
         match tacky_instruction {
             TackyInstruction::UnaryInstruction(unary_instruction) => {
                 let src_operand = AsmOperand::from_tacky_value(unary_instruction.src);
-                let unary_instruction = AsmUnaryInstruction {
+                let dst_operand = AsmOperand::from_tacky_value(
+                    TackyValue::Var(unary_instruction.dst)
+                );
+                let asm_mov_instruction = MovInstruction::new(
+                    src_operand, dst_operand.clone()
+                );
+                let asm_unary_instruction = AsmUnaryInstruction {
                     operator: unary_instruction.operator,
-                    operand: src_operand,
+                    destination: dst_operand
                 };
-                vec![AsmInstruction::Unary(unary_instruction)]
+                vec![
+                    AsmInstruction::Mov(asm_mov_instruction),
+                    AsmInstruction::Unary(asm_unary_instruction)
+                ]
             },
             TackyInstruction::Return(tacky_value) => {
                 let src_operand = match tacky_value {
@@ -377,13 +395,21 @@ impl MovInstruction {
 }
 impl AsmSymbol for MovInstruction {
     fn to_asm_code(self) -> Result<String, AsmGenError> {
-        let is_src_stack_alloc = self.source.is_stack_alloc();
-        let is_dst_stack_alloc = self.destination.is_stack_alloc();
+        let is_src_stack_addr = self.source.is_stack_address();
+        let is_src_constant = self.source.is_constant();
+        let is_dst_stack_addr = self.destination.is_stack_address();
         println!("MOV_PRE {}", format!("{:?}, {:?}", &self.source, &self.destination));
+
         let src_asm = self.source.to_asm_code()?;
         let dst_asm = self.destination.to_asm_code()?;
 
-        if is_src_stack_alloc && is_dst_stack_alloc {
+        if (is_src_stack_addr || is_src_constant) && is_dst_stack_addr {
+            /*
+            Apparently moving stack allocated values and constants
+            directly to stack addresses is not allowed in x86-64 assembly.
+            So we move the value to a scratch register first,
+            then move it to the stack address.
+            */
             let mut asm_code: String = String::new();
             asm_code.push_str(&format!("movl {src_asm}, {SCRATCH_REGISTER}\n"));
             asm_code.push_str(&format!("movl {SCRATCH_REGISTER}, {dst_asm}"));
@@ -449,7 +475,7 @@ impl StackAddress {
 }
 impl AsmSymbol for StackAddress {
     fn to_asm_code(self) -> Result<String, AsmGenError> {
-        Ok(format!("${}{BASE_REGISTER}", self.offset))
+        Ok(format!("-{}({BASE_REGISTER})", self.offset))
     }
 }
 
@@ -485,8 +511,11 @@ impl AsmSymbol for AsmOperand {
     }
 }
 impl AsmOperand {
-    pub fn is_stack_alloc(&self) -> bool {
+    pub fn is_stack_address(&self) -> bool {
         matches!(self, AsmOperand::Stack(_))
+    }
+    pub fn is_constant(&self) -> bool {
+        matches!(self, AsmOperand::ImmediateValue(_))
     }
     pub fn from_tacky_value(tacky_value: TackyValue) -> Self {
         match tacky_value {
