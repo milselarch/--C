@@ -1,12 +1,17 @@
+use std::collections::HashMap;
 use crate::parser::parse::{
     Expression, ExpressionVariant, Statement, SupportedUnaryOperators
 };
+use helpers::ToStackAllocated;
+use crate::asm_gen::helpers;
+use crate::asm_gen::helpers::{AppendOnlyHashMap, StackAllocationResult};
 use crate::parser::parser_helpers::{ParseError, PoppedTokenContext};
 use crate::tacky::tacky_symbols::{
     tacky_gen_from_filepath, TackyFunction, TackyInstruction, TackyProgram,
     TackyValue, TackyVariable
 };
 
+const STACK_VARIABLE_SIZE = 4; // bytes
 const TAB: &str = "    ";
 const SCRATCH_REGISTER: &str = "%r10d";
 const STACK_REGISTER: &str = "%rsp";
@@ -49,12 +54,6 @@ pub trait HasPopContexts: Clone {
         }).collect::<Vec<String>>().join("\n") + "\n"
     }
 }
-pub trait ToStackAllocated {
-    fn to_stack_allocated(
-        &self, stack_value: u64, offset_size: u64
-        // returns a tuple of (Self, new stack_value)
-    ) -> (Self, u64) where Self: Sized;
-}
 
 pub struct AsmProgram {
     pub(crate) function: AsmFunction,
@@ -83,13 +82,15 @@ impl AsmSymbol for AsmProgram {
 }
 impl ToStackAllocated for AsmProgram {
     fn to_stack_allocated(
-        &self, stack_value: u64, offset_size: u64
-    ) -> (Self, u64) {
-        let (new_function, new_stack_value) =
-            self.function.to_stack_allocated(stack_value, offset_size);
+        &self, stack_value: u64,
+        allocations: &AppendOnlyHashMap<TackyVariable, u64>
+    ) -> (Self, StackAllocationResult) {
+        let (new_function, stack_alloc_result) =
+            self.function.to_stack_allocated(stack_value, allocations);
         let new_program = AsmProgram {
             function: new_function,
         };
+
         (new_program, new_stack_value)
     }}
 
@@ -157,8 +158,9 @@ impl AsmSymbol for AsmFunction {
 }
 impl ToStackAllocated for AsmFunction {
     fn to_stack_allocated(
-        &self, stack_value: u64, offset_size: u64
-    ) -> (Self, u64) {
+        &self, stack_value: u64,
+        allocations: &AppendOnlyHashMap<TackyVariable, u64>
+    ) -> (Self, StackAllocationResult) {
         let mut new_instructions = vec![];
         let mut new_stack_value = stack_value;
 
@@ -269,8 +271,9 @@ impl AsmUnaryInstruction {
 }
 impl ToStackAllocated for AsmUnaryInstruction {
     fn to_stack_allocated(
-        &self, stack_value: u64, offset_size: u64
-    ) -> (Self, u64) {
+        &self, stack_value: u64,
+        allocations: &AppendOnlyHashMap<TackyVariable, u64>
+    ) -> (Self, StackAllocationResult) {
         /*
         We don't return the newly allocated stack value here because
         the asm stack operation is applied in place.
@@ -362,8 +365,9 @@ impl AsmInstruction {
 }
 impl ToStackAllocated for AsmInstruction {
     fn to_stack_allocated(
-        &self, stack_value: u64, offset_size: u64
-    ) -> (Self, u64) {
+        &self, stack_value: u64,
+        allocations: &AppendOnlyHashMap<TackyVariable, u64>
+    ) -> (Self, StackAllocationResult) {
         match self {
             AsmInstruction::Mov(mov_instruction) => {
                 let (new_mov_instruction, new_stack_value) =
@@ -421,8 +425,11 @@ impl AsmSymbol for MovInstruction {
 }
 impl ToStackAllocated for MovInstruction {
     fn to_stack_allocated(
-        &self, stack_value: u64, offset_size: u64
-    ) -> (Self, u64) {
+        &self, stack_value: u64,
+        allocations: &AppendOnlyHashMap<TackyVariable, u64>
+    ) -> (Self, StackAllocationResult) {
+        let buffered_allocations = allocations.to_buffered();
+
         let (source, stack_value) =
             self.source.to_stack_allocated(stack_value, offset_size);
         let (destination, stack_value) =
@@ -532,8 +539,9 @@ impl AsmOperand {
 }
 impl ToStackAllocated for AsmOperand {
     fn to_stack_allocated(
-        &self, stack_value: u64, offset_size: u64
-    ) -> (Self, u64) {
+        &self, stack_value: u64,
+        allocations: &AppendOnlyHashMap<TackyVariable, u64>
+    ) -> (Self, StackAllocationResult) {
         /*
         Converts the AsmOperand to a stack allocation if it is a pseudo register.
         returns a tuple containing the new AsmOperand and a boolean indicating
@@ -542,13 +550,13 @@ impl ToStackAllocated for AsmOperand {
         match self {
             AsmOperand::Pseudo(pseudo_register) => {
                 let stack_address = StackAddress::from_pseudo_register(
-                    pseudo_register, stack_value, offset_size
+                    pseudo_register, stack_value, STACK_VARIABLE_SIZE
                 );
                 let new_instruction = AsmOperand::Stack(stack_address);
                 (new_instruction, stack_value + offset_size)
             },
             other => {
-                (other.clone(), stack_value)
+                (other.clone(), StackAllocationResult::new(stack_value) )
             }
         }
     }

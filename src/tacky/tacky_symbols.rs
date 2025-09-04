@@ -1,3 +1,4 @@
+use std::hash::{Hash, Hasher};
 use crate::parser::parse::{
     Identifier, ASTProgram, SupportedUnaryOperators, ASTFunction,
     ExpressionVariant, ASTConstant, parse_from_filepath
@@ -14,11 +15,18 @@ impl TackyVariable {
         TackyVariable { id, name: "".to_string() }
     }
 }
+impl Eq for TackyVariable {}
 impl PartialEq for TackyVariable {
     fn eq(&self, other: &Self) -> bool {
         self.id == other.id
     }
 }
+impl Hash for TackyVariable {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.id.hash(state);
+    }
+}
+
 
 #[derive(Debug, Clone)]
 pub enum TackyValue {
