@@ -4,7 +4,7 @@ use crate::parser::parse::{
 };
 use helpers::ToStackAllocated;
 use crate::asm_gen::helpers;
-use crate::asm_gen::helpers::{AppendOnlyHashMap, BufferedHashMap, HashMappable, StackAllocationResult};
+use crate::asm_gen::helpers::{AppendOnlyHashMap, BufferedHashMap, DiffableHashMap, StackAllocationResult};
 use crate::parser::parser_helpers::{ParseError, PoppedTokenContext};
 use crate::tacky::tacky_symbols::{
     tacky_gen_from_filepath, TackyFunction, TackyInstruction, TackyProgram,
@@ -419,24 +419,24 @@ impl AsmSymbol for MovInstruction {
 impl ToStackAllocated for MovInstruction {
     fn to_stack_allocated(
         &self, stack_value: u64,
-        allocations: &dyn HashMappable<u64, u64>
+        allocations: &dyn DiffableHashMap<u64, u64>
     ) -> (Self, StackAllocationResult) {
-        let mut buffered = BufferedHashMap::new(allocations);
+        let mut alloc_buffer = BufferedHashMap::new(allocations);
 
         let (source, src_alloc_result) =
-            self.source.to_stack_allocated(stack_value, buffered.get_source_ref());
+            self.source.to_stack_allocated(stack_value, alloc_buffer.get_source_ref());
         let stack_value = src_alloc_result.new_stack_value;
-        buffered.apply_changes(src_alloc_result.new_stack_allocations).unwrap();
+        alloc_buffer.apply_changes(src_alloc_result.new_stack_allocations).unwrap();
 
         let (destination, dst_alloc_result) =
-            self.destination.to_stack_allocated(stack_value, buffered.get_source_ref());
+            self.destination.to_stack_allocated(stack_value, alloc_buffer.get_source_ref());
         let stack_value = dst_alloc_result.new_stack_value;
-        buffered.apply_changes(dst_alloc_result.new_stack_allocations).unwrap();
+        alloc_buffer.apply_changes(dst_alloc_result.new_stack_allocations).unwrap();
 
         let new_instruction = MovInstruction { source, destination };
         let alloc_result = StackAllocationResult::with_allocations(
             stack_value,
-            buffered.build_changes().to_hash_map()
+            alloc_buffer.build_changes().to_hash_map()
         );
 
         (new_instruction, alloc_result)
@@ -472,7 +472,7 @@ impl StackAddress {
     }
     pub fn from_pseudo_register(
         pseudo_register: &PseudoRegister, current_stack_offset: u64,
-        offset_size: u64, existing_allocations: &dyn HashMappable<u64, u64>
+        offset_size: u64, existing_allocations: &dyn DiffableHashMap<u64, u64>
     ) -> (Self, bool) {
         /*
         Returns the StackAddress ASM Symbol and a boolean indicating
@@ -553,7 +553,7 @@ impl AsmOperand {
 impl ToStackAllocated for AsmOperand {
     fn to_stack_allocated(
         &self, stack_value: u64,
-        allocations: &dyn HashMappable<u64, u64>
+        allocations: &dyn DiffableHashMap<u64, u64>
     ) -> (Self, StackAllocationResult) {
         /*
         Converts the AsmOperand to a stack allocation if it is a pseudo register.

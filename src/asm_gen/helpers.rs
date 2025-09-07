@@ -49,7 +49,7 @@ impl<K: std::hash::Hash + Eq + Clone, V: Clone> AppendOnlyHashMap<K,V> {
 }
 impl <
     'a, K: std::hash::Hash + Eq + Clone, V: Clone
-> HashMappable<K, V> for AppendOnlyHashMap<K, V> {
+> DiffableHashMap<K, V> for AppendOnlyHashMap<K, V> {
     fn to_hash_map(&self) -> HashMap<K, V> {
         self.map.clone()
     }
@@ -78,13 +78,13 @@ impl <
 
 #[derive(Clone)]
 pub struct BufferedHashMap<'a, K: Clone, V: Clone> {
-    read_only: &'a dyn HashMappable<K, V>,
+    read_only: &'a dyn DiffableHashMap<K, V>,
     buffer: AppendOnlyHashMap<K, V>
 }
 impl <
     'a, K: std::hash::Hash + Eq + Clone, V: Clone
 > BufferedHashMap<'a, K,V> {
-    pub fn new(base: &'a dyn HashMappable<K, V>) -> Self {
+    pub fn new(base: &'a dyn DiffableHashMap<K, V>) -> Self {
         BufferedHashMap {
             read_only: base,
             buffer: AppendOnlyHashMap::new()
@@ -97,7 +97,7 @@ impl <
             self.buffer.insert(key, value)
         }
     }
-    pub fn get_source_ref(&self) -> &'a dyn HashMappable<K, V> {
+    pub fn get_source_ref(&self) -> &'a dyn DiffableHashMap<K, V> {
         self.read_only
     }
     pub fn get(&self, key: &K) -> Option<&V> {
@@ -110,7 +110,7 @@ impl <
 }
 impl <
     'a, K: std::hash::Hash + Eq + Clone, V: Clone
-> HashMappable<K, V> for BufferedHashMap<'a, K, V> {
+> DiffableHashMap<K, V> for BufferedHashMap<'a, K, V> {
     fn to_hash_map(&self) -> HashMap<K, V> {
         let mut combined = self.read_only.to_hash_map();
         for (k, v) in self.buffer.iter() {
@@ -140,7 +140,7 @@ impl <
     }
 }
 
-pub trait HashMappable<K: Clone + Eq + std::hash::Hash, V: Clone> {
+pub trait DiffableHashMap<K: Clone + Eq + std::hash::Hash, V: Clone> {
     fn to_hash_map(&self) -> HashMap<K, V>;
     fn from_hash_map(map: HashMap<K, V>) -> Self where Self: Sized;
     fn insert(&mut self, key: K, value: V) -> Result<Option<V>, ()>;
@@ -185,7 +185,7 @@ pub trait ToStackAllocated {
     fn to_stack_allocated(
         &self, stack_value: u64,
         // pseudo-register ID to stack address offset
-        allocations: &dyn HashMappable<u64, u64>
+        allocations: &dyn DiffableHashMap<u64, u64>
         // returns a tuple of (Self, new stack_value)
     ) -> (Self, StackAllocationResult) where Self: Sized;
 }
