@@ -4,14 +4,14 @@ use crate::parser::parse::{
 };
 use helpers::ToStackAllocated;
 use crate::asm_gen::helpers;
-use crate::asm_gen::helpers::{AppendOnlyHashMap, StackAllocationResult};
+use crate::asm_gen::helpers::{AppendOnlyHashMap, BufferedHashMap, HashMappable, StackAllocationResult};
 use crate::parser::parser_helpers::{ParseError, PoppedTokenContext};
 use crate::tacky::tacky_symbols::{
     tacky_gen_from_filepath, TackyFunction, TackyInstruction, TackyProgram,
     TackyValue, TackyVariable
 };
 
-const STACK_VARIABLE_SIZE = 4; // bytes
+const STACK_VARIABLE_SIZE: u64 = 4; // bytes
 const TAB: &str = "    ";
 const SCRATCH_REGISTER: &str = "%r10d";
 const STACK_REGISTER: &str = "%rsp";
@@ -83,7 +83,7 @@ impl AsmSymbol for AsmProgram {
 impl ToStackAllocated for AsmProgram {
     fn to_stack_allocated(
         &self, stack_value: u64,
-        allocations: &AppendOnlyHashMap<TackyVariable, u64>
+        allocations: &AppendOnlyHashMap<u64, u64>
     ) -> (Self, StackAllocationResult) {
         let (new_function, stack_alloc_result) =
             self.function.to_stack_allocated(stack_value, allocations);
@@ -241,13 +241,6 @@ impl PseudoRegister {
         let mut pseudo_register = PseudoRegister::new(tacky_var.id, tacky_var.name);
         pseudo_register.set_tacky_var(cloned_var);
         pseudo_register
-    }
-    pub fn to_stack_allocation(
-        self, stack_value: u64, offset_size: u64
-    ) -> StackAddress {
-        StackAddress::from_pseudo_register(
-            &self, stack_value, offset_size
-        )
     }
 }
 
@@ -426,17 +419,27 @@ impl AsmSymbol for MovInstruction {
 impl ToStackAllocated for MovInstruction {
     fn to_stack_allocated(
         &self, stack_value: u64,
-        allocations: &AppendOnlyHashMap<TackyVariable, u64>
+        allocations: &dyn HashMappable<u64, u64>
     ) -> (Self, StackAllocationResult) {
-        let buffered_allocations = allocations.to_buffered();
+        let mut buffered = BufferedHashMap::new(allocations);
 
-        let (source, stack_value) =
-            self.source.to_stack_allocated(stack_value, offset_size);
-        let (destination, stack_value) =
-            self.destination.to_stack_allocated(stack_value, offset_size);
+        let (source, src_alloc_result) =
+            self.source.to_stack_allocated(stack_value, buffered.get_source_ref());
+        let stack_value = src_alloc_result.new_stack_value;
+        buffered.apply_changes(src_alloc_result.new_stack_allocations).unwrap();
+
+        let (destination, dst_alloc_result) =
+            self.destination.to_stack_allocated(stack_value, buffered.get_source_ref());
+        let stack_value = dst_alloc_result.new_stack_value;
+        buffered.apply_changes(dst_alloc_result.new_stack_allocations).unwrap();
 
         let new_instruction = MovInstruction { source, destination };
-        (new_instruction, stack_value)
+        let alloc_result = StackAllocationResult::with_allocations(
+            stack_value,
+            buffered.build_changes().to_hash_map()
+        );
+
+        (new_instruction, alloc_result)
     }
 }
 
@@ -468,16 +471,26 @@ impl StackAddress {
         }
     }
     pub fn from_pseudo_register(
-        pseudo_register: &PseudoRegister, stack_value: u64,
-        offset_size: u64
-    ) -> Self {
+        pseudo_register: &PseudoRegister, current_stack_offset: u64,
+        offset_size: u64, existing_allocations: &dyn HashMappable<u64, u64>
+    ) -> (Self, bool) {
+        /*
+        Returns the StackAddress ASM Symbol and a boolean indicating
+        whether the pseudo register was already allocated on the stack.
+        */
+        let existing_allocation = existing_allocations.get(&pseudo_register.id);
+        let stack_value = match existing_allocation {
+            Some(&addr) => addr,
+            None => current_stack_offset
+        };
+
         let stack_address = StackAddress {
             offset: stack_value,
             offset_size,
             pop_contexts: pseudo_register.pop_contexts.clone(),
             tacky_var: pseudo_register.tacky_var.clone(),
         };
-        stack_address
+        (stack_address, existing_allocation.is_some())
     }
 }
 impl AsmSymbol for StackAddress {
@@ -540,7 +553,7 @@ impl AsmOperand {
 impl ToStackAllocated for AsmOperand {
     fn to_stack_allocated(
         &self, stack_value: u64,
-        allocations: &AppendOnlyHashMap<TackyVariable, u64>
+        allocations: &dyn HashMappable<u64, u64>
     ) -> (Self, StackAllocationResult) {
         /*
         Converts the AsmOperand to a stack allocation if it is a pseudo register.
@@ -549,11 +562,25 @@ impl ToStackAllocated for AsmOperand {
         */
         match self {
             AsmOperand::Pseudo(pseudo_register) => {
-                let stack_address = StackAddress::from_pseudo_register(
-                    pseudo_register, stack_value, STACK_VARIABLE_SIZE
+                let (
+                    stack_address, newly_allocated
+                )  = StackAddress::from_pseudo_register(
+                    pseudo_register, stack_value, STACK_VARIABLE_SIZE,
+                    allocations
                 );
+
+                let mut new_stack_value = stack_value;
+                let mut new_allocations: HashMap<u64, u64> = HashMap::new();
+                if newly_allocated {
+                    new_stack_value += STACK_VARIABLE_SIZE;
+                    new_allocations.insert(pseudo_register.id, stack_value);
+                }
+                let stack_alloc_result = StackAllocationResult::with_allocations(
+                    new_stack_value, new_allocations
+                );
+
                 let new_instruction = AsmOperand::Stack(stack_address);
-                (new_instruction, stack_value + offset_size)
+                (new_instruction, stack_alloc_result)
             },
             other => {
                 (other.clone(), StackAllocationResult::new(stack_value) )
