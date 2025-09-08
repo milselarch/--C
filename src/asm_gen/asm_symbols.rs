@@ -4,7 +4,9 @@ use crate::parser::parse::{
 };
 use helpers::ToStackAllocated;
 use crate::asm_gen::helpers;
-use crate::asm_gen::helpers::{AppendOnlyHashMap, BufferedHashMap, DiffableHashMap, StackAllocationResult};
+use crate::asm_gen::helpers::{
+    AppendOnlyHashMap, BufferedHashMap, DiffableHashMap, StackAllocationResult
+};
 use crate::parser::parser_helpers::{ParseError, PoppedTokenContext};
 use crate::tacky::tacky_symbols::{
     tacky_gen_from_filepath, TackyFunction, TackyInstruction, TackyProgram,
@@ -75,23 +77,25 @@ impl AsmProgram {
 }
 impl AsmSymbol for AsmProgram {
     fn to_asm_code(self) -> Result<String, AsmGenError> {
+        let stack_alloc_map: AppendOnlyHashMap<u64, u64> =
+            AppendOnlyHashMap::new();
         let stack_allocated_program =
-            self.to_stack_allocated(0, 4).0;
+            self.to_stack_allocated(0, &stack_alloc_map).0;
         Ok(stack_allocated_program._to_asm_code()?)
     }
 }
 impl ToStackAllocated for AsmProgram {
     fn to_stack_allocated(
         &self, stack_value: u64,
-        allocations: &AppendOnlyHashMap<u64, u64>
+        allocations: &dyn DiffableHashMap<u64, u64>
     ) -> (Self, StackAllocationResult) {
-        let (new_function, stack_alloc_result) =
+        let (new_function, alloc_result) =
             self.function.to_stack_allocated(stack_value, allocations);
         let new_program = AsmProgram {
             function: new_function,
         };
 
-        (new_program, new_stack_value)
+        (new_program, alloc_result)
     }}
 
 #[derive(Clone, Debug)]
@@ -159,16 +163,21 @@ impl AsmSymbol for AsmFunction {
 impl ToStackAllocated for AsmFunction {
     fn to_stack_allocated(
         &self, stack_value: u64,
-        allocations: &AppendOnlyHashMap<TackyVariable, u64>
+        allocations: &dyn DiffableHashMap<u64, u64>
     ) -> (Self, StackAllocationResult) {
+        let mut alloc_buffer = BufferedHashMap::new(allocations);
         let mut new_instructions = vec![];
         let mut new_stack_value = stack_value;
 
         for instruction in &self.instructions {
-            let (new_instruction, updated_stack_value) =
-                instruction.to_stack_allocated(new_stack_value, offset_size);
+            let (new_instruction, instruction_alloc_result) =
+                instruction.to_stack_allocated(new_stack_value, &alloc_buffer);
             new_instructions.push(new_instruction);
-            new_stack_value = updated_stack_value;
+
+            new_stack_value = instruction_alloc_result.new_stack_value;
+            alloc_buffer.apply_changes(
+                instruction_alloc_result.new_stack_allocations
+            ).unwrap();
         }
 
         let new_function = AsmFunction {
@@ -176,7 +185,12 @@ impl ToStackAllocated for AsmFunction {
             instructions: new_instructions,
             pop_contexts: self.pop_contexts.clone(),
         };
-        (new_function, new_stack_value)
+        let new_stack_allocations =
+            alloc_buffer.build_changes().to_hash_map();
+        let func_alloc_result =
+            StackAllocationResult::with_allocations(new_stack_value, new_stack_allocations);
+
+        (new_function, func_alloc_result)
     }
 }
 
@@ -265,19 +279,15 @@ impl AsmUnaryInstruction {
 impl ToStackAllocated for AsmUnaryInstruction {
     fn to_stack_allocated(
         &self, stack_value: u64,
-        allocations: &AppendOnlyHashMap<TackyVariable, u64>
+        allocations: &dyn DiffableHashMap<u64, u64>
     ) -> (Self, StackAllocationResult) {
-        /*
-        We don't return the newly allocated stack value here because
-        the asm stack operation is applied in place.
-        */
-        let (operand, _) =
-            self.destination.to_stack_allocated(stack_value, offset_size);
+        let (operand, alloc_result) =
+            self.destination.to_stack_allocated(stack_value, allocations);
         let new_instruction = AsmUnaryInstruction {
             operator: self.operator.clone(),
             destination: operand,
         };
-        (new_instruction, stack_value)
+        (new_instruction, alloc_result)
     }
 }
 impl AsmSymbol for AsmUnaryInstruction {
@@ -359,22 +369,22 @@ impl AsmInstruction {
 impl ToStackAllocated for AsmInstruction {
     fn to_stack_allocated(
         &self, stack_value: u64,
-        allocations: &AppendOnlyHashMap<TackyVariable, u64>
+        allocations: &dyn DiffableHashMap<u64, u64>
     ) -> (Self, StackAllocationResult) {
         match self {
             AsmInstruction::Mov(mov_instruction) => {
-                let (new_mov_instruction, new_stack_value) =
-                    mov_instruction.to_stack_allocated(stack_value, offset_size);
-                (AsmInstruction::Mov(new_mov_instruction), new_stack_value)
+                let (new_mov_instruction, alloc_result) =
+                    mov_instruction.to_stack_allocated(stack_value, allocations);
+                (AsmInstruction::Mov(new_mov_instruction), alloc_result)
             },
             AsmInstruction::Unary(unary_instruction) => {
-                let (new_unary_instruction, new_stack_value) =
-                    unary_instruction.to_stack_allocated(stack_value, offset_size);
-                (AsmInstruction::Unary(new_unary_instruction), new_stack_value)
+                let (new_unary_instruction, alloc_result) =
+                    unary_instruction.to_stack_allocated(stack_value, allocations);
+                (AsmInstruction::Unary(new_unary_instruction), alloc_result)
             },
             others => {
                 // For other instructions, we assume they do not require stack allocation
-                (others.clone(), stack_value)
+                (others.clone(), StackAllocationResult::new(stack_value))
             }
         }
     }
