@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::fmt::format;
 use crate::parser::parse::{
     Expression, ExpressionVariant, Statement, SupportedUnaryOperators
 };
@@ -143,12 +144,18 @@ impl HasPopContexts for AsmFunction {
 }
 impl AsmSymbol for AsmFunction {
     fn to_asm_code(self) -> Result<String, AsmGenError> {
+        /*
+        TODO: Should there be an extra layer for Assembly line generation?
+        */
         let mut code = "".to_string();
         println!("ASM_INSTRUCTIONS: {:?}", self.instructions);
 
         code.push_str(&format!("{TAB}.globl {}", self.name));
         code.push_str(&*self.contexts_to_string());
         code.push_str(&format!("{}:\n", self.name));
+
+        code.push_str(&format!("{TAB}pushq {BASE_REGISTER}\n"));
+        code.push_str(&format!("{TAB}movq {STACK_REGISTER}, {BASE_REGISTER}\n"));
 
         for instruction in self.instructions {
             let inner_code = &instruction.to_asm_code()?;
@@ -157,6 +164,7 @@ impl AsmSymbol for AsmFunction {
             code.push_str(&*indented_inner_code);
             code.push_str("\n");
         }
+
         Ok(code)
     }
 }
@@ -317,7 +325,13 @@ impl AsmSymbol for AsmInstruction {
             AsmInstruction::AllocateStack(stack_allocation) => {
                 Ok(stack_allocation.to_asm_code()?)
             },
-            AsmInstruction::Ret => Ok("ret\n".to_string()),
+            AsmInstruction::Ret => {
+                let mut code = String::new();
+                code.push_str(&format!("movq {BASE_REGISTER}, {STACK_REGISTER}\n"));
+                code.push_str(&format!("popq {BASE_REGISTER}\n"));
+                code.push_str("ret\n");
+                Ok(code.to_string())
+            },
         }
     }
 }
