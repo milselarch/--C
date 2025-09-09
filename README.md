@@ -11,6 +11,24 @@
 
 ## `CHAPTER 2`
 
+Test compilation on all test cases in chapter 2:
+```bash
+cargo build && \
+writing-a-c-compiler-tests/test_compiler ./target/debug/ca-compiler --chapter 2
+```
+
+Test asm gen on all test cases in chapter 2:
+```bash
+cargo build && \
+writing-a-c-compiler-tests/test_compiler ./target/debug/ca-compiler --chapter 2 --stage codegen
+```  
+
+Test tacky on all test cases in chapter 2:
+```bash
+cargo build && \
+writing-a-c-compiler-tests/test_compiler ./target/debug/ca-compiler --chapter 2 --stage tacky
+```  
+
 Test lexer on all test cases in chapter 2:
 ```bash
 cargo build && \

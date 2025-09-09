@@ -2,9 +2,8 @@ use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::Path;
 use std::process::Command;
-use crate::{AssembleAndLinkError};
-use crate::parser::asm_symbols::AsmSymbol;
-use crate::parser::parse;
+use crate::{asm_gen, AssembleAndLinkError};
+use crate::asm_gen::asm_symbols::AsmSymbol;
 
 pub fn assemble_and_link(
     asm_path: &Path, exe_path: &Path
@@ -36,17 +35,25 @@ pub fn compile_from_filepath(
     let asm_output_path = path.with_extension("s");
     let exec_output_path = path.with_extension("");
     let asm_gen_result =
-        parse::asm_gen_from_filepath(source_filepath, true);
+        asm_gen::asm_symbols::asm_gen_from_filepath(source_filepath, true);
 
     let asm_program = match asm_gen_result {
         Ok(program) => program,
         Err(err) => {
-            eprintln!("Error generating assembly: {}", err);
+            eprintln!("Error generating assembly: {:?}", err);
             std::process::exit(1);
         }
     };
 
-    let asm_code = asm_program.to_asm_code();
+    let asm_code_res = asm_program.to_asm_code();
+    let asm_code = match asm_code_res {
+        Ok(code) => code,
+        Err(err) => {
+            eprintln!("Error converting to assembly code: {:?}", err);
+            std::process::exit(1);
+        }
+    };
+    
     println!("\nGenerated assembly code:");
     println!("---------------------------------");
     println!("{}", asm_code);

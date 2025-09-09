@@ -7,6 +7,8 @@ use crate::lexer::lexer::lex_from_filepath;
 pub mod lexer;
 pub mod parser;
 mod generator;
+pub mod tacky;
+pub mod asm_gen;
 
 fn print_usage(args: &Vec<String>) {
     eprintln!("Unknown / invalid args: {:?}", args);
@@ -56,7 +58,8 @@ fn main() -> io::Result<()> {
 
     match subcommand {
         "--lex" => {
-            let lex_result = lex_from_filepath(&args[2], true);
+            let lex_result =
+                lex_from_filepath(&args[2], true);
             if lex_result.is_err() {
                 eprintln!("Error: {:?}", lex_result.err().unwrap());
                 std::process::exit(1);
@@ -66,7 +69,8 @@ fn main() -> io::Result<()> {
             }
         },
         "--parse" => {
-            let parse_result = parser::parse::parse_from_filepath(&args[2], true);
+            let parse_result =
+                parser::parse::parse_from_filepath(&args[2], true);
             if parse_result.is_err() {
                 eprintln!("Parse Error: {}", parse_result.err().unwrap());
                 std::process::exit(1);
@@ -75,10 +79,22 @@ fn main() -> io::Result<()> {
                 std::process::exit(0);
             }
         },
+        "--tacky" => {
+            let tacky_gen_result =
+                tacky::tacky_symbols::tacky_gen_from_filepath(&args[2], true);
+            if tacky_gen_result.is_err() {
+                eprintln!("Tacky Generation Error: {}", tacky_gen_result.err().unwrap());
+                std::process::exit(1);
+            } else {
+                println!("Tacky Generation successful!");
+                std::process::exit(0);
+            }
+        },
         "--codegen" => {
-            let asm_gen_result = parser::parse::asm_gen_from_filepath(&args[2], true);
+            let asm_gen_result = 
+                asm_gen::asm_symbols::asm_gen_from_filepath(&args[2], true);
             if asm_gen_result.is_err() {
-                eprintln!("Assembly Generation Error: {}", asm_gen_result.err().unwrap());
+                eprintln!("Assembly Generation Error: {:?}", asm_gen_result.err().unwrap());
                 std::process::exit(1);
             } else {
                 println!("Assembly Generation successful!");
