@@ -9,6 +9,15 @@
 
 # `C compiler tests`
 
+## `CHAPTER 3`
+
+Test lexer on all test cases in chapter 3 (windows):
+```bash
+cargo build; 
+python writing-a-c-compiler-tests/test_compiler ./target/debug/ca-compiler --chapter 3 --stage lex
+```
+
+
 ## `CHAPTER 2`
 
 Test compilation on all test cases in chapter 2:

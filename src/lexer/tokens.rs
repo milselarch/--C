@@ -2,6 +2,8 @@ use std::fmt;
 use std::fmt::{Debug, Display};
 use regex::Regex;
 use crate::lexer::base_token_builder::{BaseTokenBuilder, TokenBuilderStates};
+use strum::IntoEnumIterator;
+use strum_macros::EnumIter;
 
 pub fn is_word_boundary(c: char) -> bool {
     let word_char_regex = Regex::new(r"^\w").unwrap();
@@ -272,11 +274,19 @@ pub trait TokenBuilder: Display {
     fn build_token(&self) -> Option<Tokens>;
 }
 
-#[derive(PartialEq, Copy, Clone, Debug, Eq)]
+#[derive(PartialEq, Copy, Clone, Debug, Eq, EnumIter)]
 pub enum Operators {
     Decrement,
     Minus,
     BitwiseNot,
+    Add,
+    Subtract,
+    Multiply,
+    Divide,
+    Remainder,
+    BitwiseXor,
+    LeftShift,
+    RightShift,
 }
 impl Operators {
     pub fn to_string(&self) -> String {
@@ -284,6 +294,14 @@ impl Operators {
             Operators::Minus => "-".to_string(),
             Operators::BitwiseNot => "~".to_string(),
             Operators::Decrement => "--".to_string(),
+            Operators::Add => "+".to_string(),
+            Operators::Subtract => "-".to_string(),
+            Operators::Multiply => "*".to_string(),
+            Operators::Divide => "/".to_string(),
+            Operators::Remainder => "%".to_string(),
+            Operators::BitwiseXor => "^".to_string(),
+            Operators::LeftShift => "<<".to_string(),
+            Operators::RightShift => ">>".to_string(),
         }
     }
 }
