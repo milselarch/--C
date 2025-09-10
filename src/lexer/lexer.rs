@@ -244,12 +244,12 @@ impl Lexer {
     }
     fn make_token_builders() -> Vec<Box<dyn TokenBuilder>> {
         vec![
+            Box::new(MultiLineCommentBuilder::new()),
+            Box::new(SingleLineCommentBuilder::new()),
             Box::new(IdentifierBuilder::new()),
             Box::new(ConstantBuilder::new()),
             Box::new(OperatorsBuilder::new()),
             Box::new(PunctuatorsBuilder::new()),
-            Box::new(SingleLineCommentBuilder::new()),
-            Box::new(MultiLineCommentBuilder::new())
         ]
     }
 
