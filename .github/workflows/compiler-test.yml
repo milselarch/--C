@@ -1,0 +1,65 @@
+name: CA Compiler Chapter Tests
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          profile: minimal
+          override: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install test dependencies
+        run: |
+          pip install -r writing-a-c-compiler-tests/requirements.txt || true
+
+      - name: Build project
+        run: cargo build
+
+      - name: Chapter 1 - Lexing
+        run: |
+          python writing-a-c-compiler-tests/test_compiler ./target/debug/ca-compiler --chapter 1 --stage lex
+
+      - name: Chapter 1 - Parsing
+        run: |
+          python writing-a-c-compiler-tests/test_compiler ./target/debug/ca-compiler --chapter 1 --stage parse
+
+      - name: Chapter 1 - ASM Generation
+        run: |
+          python writing-a-c-compiler-tests/test_compiler ./target/debug/ca-compiler --chapter 1 --stage codegen
+
+      - name: Chapter 1 - Compilation
+        run: |
+          python writing-a-c-compiler-tests/test_compiler ./target/debug/ca-compiler --chapter 1
+
+      - name: Chapter 2 - Lexing
+        run: |
+          python writing-a-c-compiler-tests/test_compiler ./target/debug/ca-compiler --chapter 2 --stage lex
+
+      - name: Chapter 2 - ASM Generation
+        run: |
+          python writing-a-c-compiler-tests/test_compiler ./target/debug/ca-compiler --chapter 2 --stage codegen
+
+      - name: Chapter 2 - Tacky
+        run: |
+          python writing-a-c-compiler-tests/test_compiler ./target/debug/ca-compiler --chapter 2 --stage tacky
+
+      - name: Chapter 2 - Compilation
+        run: |
+          python writing-a-c-compiler-tests/test_compiler ./target/debug/ca-compiler --chapter 2
