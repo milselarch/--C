@@ -1,5 +1,6 @@
 use std::fmt;
 use std::fmt::{Display, Formatter};
+use strum::IntoEnumIterator;
 use crate::lexer::base_token_builder::BaseTokenBuilder;
 use crate::lexer::lexer::{ProcessResult, TokenBuilder, Tokens};
 use crate::lexer::tokens::{Operators};
@@ -77,7 +78,7 @@ pub struct OperatorsBuilder {
 }
 impl OperatorsBuilder {
     fn create_processors(
-        operator_patterns: Vec<(&str, Operators)>
+        operator_patterns: Vec<(String, Operators)>
     ) -> Vec<OperatorProcessor> {
         let mut processors = Vec::new();
         for raw_operator in operator_patterns {
@@ -91,14 +92,15 @@ impl OperatorsBuilder {
     }
 
     pub(crate) fn new() -> OperatorsBuilder {
+        let mut patterns: Vec<(String, Operators)> = vec![];
+        for operator in Operators::iter() {
+            patterns.push((operator.to_string(), operator));
+        }
+
         OperatorsBuilder {
             base: BaseTokenBuilder::new(),
             // TODO: use enum iterators macro instead of hardcoding
-            operators: OperatorsBuilder::create_processors(vec![
-                ("-", Operators::Minus),
-                ("~", Operators::BitwiseNot),
-                ("--", Operators::Decrement)
-            ])
+            operators: OperatorsBuilder::create_processors(patterns)
         }
     }
 }
