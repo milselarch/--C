@@ -12,6 +12,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       - name: Set up Rust
         uses: actions-rs/toolchain@v1
@@ -30,36 +32,36 @@ jobs:
           pip install -r writing-a-c-compiler-tests/requirements.txt || true
 
       - name: Build project
-        run: cargo build
+        run: cargo build --release
 
       - name: Chapter 1 - Lexing
         run: |
-          python writing-a-c-compiler-tests/test_compiler ./target/debug/ca-compiler --chapter 1 --stage lex
+          python writing-a-c-compiler-tests/test_compiler ./target/release/ca-compiler --chapter 1 --stage lex
 
       - name: Chapter 1 - Parsing
         run: |
-          python writing-a-c-compiler-tests/test_compiler ./target/debug/ca-compiler --chapter 1 --stage parse
+          python writing-a-c-compiler-tests/test_compiler ./target/release/ca-compiler --chapter 1 --stage parse
 
       - name: Chapter 1 - ASM Generation
         run: |
-          python writing-a-c-compiler-tests/test_compiler ./target/debug/ca-compiler --chapter 1 --stage codegen
+          python writing-a-c-compiler-tests/test_compiler ./target/release/ca-compiler --chapter 1 --stage codegen
 
       - name: Chapter 1 - Compilation
         run: |
-          python writing-a-c-compiler-tests/test_compiler ./target/debug/ca-compiler --chapter 1
+          python writing-a-c-compiler-tests/test_compiler ./target/release/ca-compiler --chapter 1
 
       - name: Chapter 2 - Lexing
         run: |
-          python writing-a-c-compiler-tests/test_compiler ./target/debug/ca-compiler --chapter 2 --stage lex
+          python writing-a-c-compiler-tests/test_compiler ./target/release/ca-compiler --chapter 2 --stage lex
 
       - name: Chapter 2 - ASM Generation
         run: |
-          python writing-a-c-compiler-tests/test_compiler ./target/debug/ca-compiler --chapter 2 --stage codegen
+          python writing-a-c-compiler-tests/test_compiler ./target/release/ca-compiler --chapter 2 --stage codegen
 
       - name: Chapter 2 - Tacky
         run: |
-          python writing-a-c-compiler-tests/test_compiler ./target/debug/ca-compiler --chapter 2 --stage tacky
+          python writing-a-c-compiler-tests/test_compiler ./target/release/ca-compiler --chapter 2 --stage tacky
 
       - name: Chapter 2 - Compilation
         run: |
-          python writing-a-c-compiler-tests/test_compiler ./target/debug/ca-compiler --chapter 2
+          python writing-a-c-compiler-tests/test_compiler ./target/release/ca-compiler --chapter 2
