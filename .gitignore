@@ -130,6 +130,7 @@ celerybeat.pid
 # config files
 *.yml
 !config.example.yml
+!.github/**
 
 # Environments
 .env
