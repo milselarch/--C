@@ -9,6 +9,7 @@ pub mod parser;
 mod generator;
 pub mod tacky;
 pub mod asm_gen;
+pub mod turing_machine;
 
 fn print_usage(args: &Vec<String>) {
     eprintln!("Unknown / invalid args: {:?}", args);
