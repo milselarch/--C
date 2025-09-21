@@ -65,12 +65,38 @@ impl SupportedUnaryOperators {
     ) -> Result<SupportedUnaryOperators, ParseError> {
         match Self::from_operator(op) {
             Some(supported_op) => Ok(supported_op),
-            None => Err(ParseError {
-                variant: ParseErrorVariants::UnexpectedToken(
+            None => Err(ParseError::new_without_stack(
+                ParseErrorVariants::UnexpectedToken(
                     format!("Unsupported unary operator {op}")
                 ),
-                token_stack: TokenStack::new(VecDeque::new())
-            }),
+            ))
+        }
+    }
+}
+
+#[derive(Clone)]
+pub enum SupportedBinaryOperators {
+    Add,
+    Subtract
+}
+impl SupportedBinaryOperators {
+    pub fn from_operator(op: Operators) -> Option<SupportedBinaryOperators> {
+        match op {
+            Operators::Add => Some(SupportedBinaryOperators::Add),
+            Operators::Subtract => Some(SupportedBinaryOperators::Subtract),
+            _ => None,
+        }
+    }
+    pub fn from_operator_as_result(
+        op: Operators
+    ) -> Result<SupportedBinaryOperators, ParseError> {
+        match Self::from_operator(op) {
+            Some(supported_op) => Ok(supported_op),
+            None => Err(ParseError::new_without_stack(
+                ParseErrorVariants::UnexpectedToken(
+                    format!("Unsupported binary operator {op}")
+                ),
+            )),
         }
     }
 }
@@ -90,7 +116,8 @@ impl ASTConstant {
 #[derive(Clone)]
 pub enum ExpressionVariant {
     Constant(ASTConstant),
-    UnaryOperation(SupportedUnaryOperators, Box<Expression>)
+    UnaryOperation(SupportedUnaryOperators, Box<Expression>),
+    BinaryOperation(SupportedBinaryOperators, Box<Expression>, Box<Expression>)
 }
 
 #[derive(Clone)]
