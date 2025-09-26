@@ -10,6 +10,7 @@ mod generator;
 pub mod tacky;
 pub mod asm_gen;
 pub mod turing_machine;
+mod lambda_calc;
 
 fn print_usage(args: &Vec<String>) {
     eprintln!("Unknown / invalid args: {:?}", args);
