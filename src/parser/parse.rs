@@ -77,14 +77,29 @@ impl SupportedUnaryOperators {
 #[derive(Clone)]
 pub enum SupportedBinaryOperators {
     Add,
-    Subtract
+    Subtract,
+    Multiply,
+    Divide,
+    Modulus,
 }
 impl SupportedBinaryOperators {
     pub fn from_operator(op: Operators) -> Option<SupportedBinaryOperators> {
         match op {
             Operators::Add => Some(SupportedBinaryOperators::Add),
             Operators::Subtract => Some(SupportedBinaryOperators::Subtract),
+            Operators::Multiply => Some(SupportedBinaryOperators::Multiply),
+            Operators::Divide => Some(SupportedBinaryOperators::Divide),
+            Operators::Modulus => Some(SupportedBinaryOperators::Modulus),
             _ => None,
+        }
+    }
+    pub fn to_precedence(&self) -> u8 {
+        match self {
+            SupportedBinaryOperators::Add => 45,
+            SupportedBinaryOperators::Subtract => 45,
+            SupportedBinaryOperators::Multiply => 50,
+            SupportedBinaryOperators::Divide => 50,
+            SupportedBinaryOperators::Modulus => 50,
         }
     }
     pub fn from_operator_as_result(
@@ -112,11 +127,64 @@ impl ASTConstant {
     }
 }
 
+#[derive(Clone)]
+pub enum FactorVariant {
+    Constant(ASTConstant),
+    UnaryOperation(SupportedUnaryOperators, Box<Factor>),
+    ParensWrapped(Box<Expression>)
+}
+
+#[derive(Clone)]
+pub struct Factor {
+    pub(crate) factor_item: FactorVariant,
+    pub(crate) pop_context: Option<PoppedTokenContext>
+}
+impl Factor {
+    pub fn new(factor_item: FactorVariant) -> Factor {
+        Factor {
+            factor_item,
+            pop_context: None
+        }
+    }
+    fn parse_as_unary_op(tokens: &mut TokenStack) -> Result<Factor, ParseError> {
+        /*
+        Try to parse a unary operation first
+        <factor> ::= <unop> <factor>
+        */
+        tokens.run_with_rollback(|stack_popper| {
+            let unary_op_wrapped_token_res = stack_popper.pop_front();
+            let unary_op_token_res = match unary_op_wrapped_token_res {
+                Ok(token) => token,
+                Err(err) => return Err(err),
+            };
+
+            let unary_op_token = unary_op_token_res.token;
+            let operator = match unary_op_token {
+                Tokens::Operator(op) => {
+                    SupportedUnaryOperators::from_operator_as_result(op)?
+                },
+                _ => return Err(ParseError {
+                    variant: ParseErrorVariants::NoMoreTokens(
+                        "Unary operation not found in expression".to_owned()
+                    ),
+                    token_stack: stack_popper.token_stack.soft_copy()
+                }),
+            };
+
+            let sub_factor = Self::parse(&mut stack_popper.token_stack)?;
+            Ok(Self {
+                pop_context: Some(stack_popper.build_pop_context()),
+                factor_item: FactorVariant::UnaryOperation(
+                    operator, Box::new(sub_factor)
+                )
+            })
+        })
+    }
+}
 
 #[derive(Clone)]
 pub enum ExpressionVariant {
-    Constant(ASTConstant),
-    UnaryOperation(SupportedUnaryOperators, Box<Expression>),
+    Factor(Box<Factor>),
     BinaryOperation(SupportedBinaryOperators, Box<Expression>, Box<Expression>)
 }
 
