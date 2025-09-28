@@ -1,11 +1,17 @@
-# ca-compiler
+# `--C`
 
-### TODO:
-- trace tokens to source code positions 
-- trace ASM lines to AST nodes
-- generate turing machine tape from code
-- implement arbitrary (specified) length integer type support
-- implement turing machine tape to CA conversion
+Goals of this programming language:
+1. Syntax supported is a subset of C
+   1. Any additional syntax that isn't supported by the C spec should
+        come with support for transpilation to C
+   2. An exception to this is support for infinite length integers
+2. It can compile to x86-64 assembly
+3. It can compile down to cellular automata
+    1. There should be a fixed position or range of positions from
+       which it can be determined whether the program has halted
+4. True support for infinite length integers
+   1. This is as opposed to arbitrary length integers with a length that is
+      bounded by the max address size (i.e. usize)
 
 # `C compiler tests`
 

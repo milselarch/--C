@@ -146,6 +146,41 @@ impl Factor {
             pop_context: None
         }
     }
+    pub fn parse(tokens: &mut TokenStack) -> Result<Factor, ParseError> {
+        // <factor> ::= <int> | <unop> <factor> | "(" <exp> ")"
+        todo!()
+    }
+    fn parse_as_constant(tokens: &mut TokenStack) -> Result<Factor, ParseError> {
+        // <exp> ::= Constant(<int>)
+        tokens.run_with_rollback(|stack_popper| {
+            let constant_wrapped_token_res = stack_popper.pop_front();
+            let constant_token_res = match constant_wrapped_token_res {
+                Ok(token) => token,
+                Err(err) => return Err(err),
+            };
+
+            let constant_token = constant_token_res.token;
+            let constant = match constant_token {
+                Tokens::Constant(constant) => constant,
+                _ => return Err(ParseError {
+                    variant: ParseErrorVariants::NoMoreTokens(
+                        "Constant not found in factor".to_owned()
+                    ),
+                    token_stack: stack_popper.token_stack.soft_copy()
+                }),
+            };
+
+            let pop_context = stack_popper.build_pop_context();
+            let ast_constant = ASTConstant {
+                value: constant.clone(),
+                pop_context: Some(pop_context.clone())
+            };
+            Ok(Factor {
+                factor_item: FactorVariant::Constant(ast_constant),
+                pop_context: Some(pop_context.clone())
+            })
+        })
+    }
     fn parse_as_unary_op(tokens: &mut TokenStack) -> Result<Factor, ParseError> {
         /*
         Try to parse a unary operation first
@@ -165,7 +200,7 @@ impl Factor {
                 },
                 _ => return Err(ParseError {
                     variant: ParseErrorVariants::NoMoreTokens(
-                        "Unary operation not found in expression".to_owned()
+                        "Unary operation not found in factor".to_owned()
                     ),
                     token_stack: stack_popper.token_stack.soft_copy()
                 }),
@@ -177,6 +212,37 @@ impl Factor {
                 factor_item: FactorVariant::UnaryOperation(
                     operator, Box::new(sub_factor)
                 )
+            })
+        })
+    }
+    fn parse_as_parens_wrapped(tokens: &mut TokenStack) -> Result<Factor, ParseError> {
+        /*
+        Try to parse a parenthesized expression first
+        <exp> ::= "(" <exp> ")"
+        */
+        tokens.run_with_rollback(|stack_popper| {
+            let open_paren_wrapped_token_res = stack_popper.pop_front();
+            let open_paren_token_res = match open_paren_wrapped_token_res {
+                Ok(token) => token,
+                Err(err) => return Err(err),
+            };
+
+            let open_paren_token = open_paren_token_res.token;
+            if open_paren_token != Tokens::Punctuator(Punctuators::OpenParens) {
+                return Err(ParseError {
+                    variant: ParseErrorVariants::UnexpectedToken(
+                        "Expected opening parenthesis".to_owned()
+                    ),
+                    token_stack: stack_popper.token_stack.soft_copy()
+                });
+            }
+
+            let sub_expression = Expression::parse(&mut stack_popper.token_stack)?;
+            stack_popper.expect_pop_front(Tokens::Punctuator(Punctuators::CloseParens))?;
+
+            Ok(Self {
+                factor_item: sub_expression.fac,
+                pop_context: Some(stack_popper.build_pop_context())
             })
         })
     }
@@ -230,38 +296,6 @@ impl Expression {
         }
     }
 
-    fn parse_as_parens_wrapped(tokens: &mut TokenStack) -> Result<Expression, ParseError> {
-        /*
-        Try to parse a parenthesized expression first
-        <exp> ::= "(" <exp> ")"
-        */
-        tokens.run_with_rollback(|stack_popper| {
-            let open_paren_wrapped_token_res = stack_popper.pop_front();
-            let open_paren_token_res = match open_paren_wrapped_token_res {
-                Ok(token) => token,
-                Err(err) => return Err(err),
-            };
-
-            let open_paren_token = open_paren_token_res.token;
-            if open_paren_token != Tokens::Punctuator(Punctuators::OpenParens) {
-                return Err(ParseError {
-                    variant: ParseErrorVariants::UnexpectedToken(
-                        "Expected opening parenthesis".to_owned()
-                    ),
-                    token_stack: stack_popper.token_stack.soft_copy()
-                });
-            }
-
-            let sub_expression = Expression::parse(&mut stack_popper.token_stack)?;
-            stack_popper.expect_pop_front(Tokens::Punctuator(Punctuators::CloseParens))?;
-
-            Ok(Self {
-                expr_item: sub_expression.expr_item,
-                pop_context: Some(stack_popper.build_pop_context())
-            })
-        })
-    }
-
     fn parse_as_unary_op(tokens: &mut TokenStack) -> Result<Expression, ParseError> {
         /*
         Try to parse a unary operation first
@@ -297,37 +331,7 @@ impl Expression {
         })
     }
 
-    fn parse_as_constant(tokens: &mut TokenStack) -> Result<Expression, ParseError> {
-        // <exp> ::= Constant(<int>)
-        tokens.run_with_rollback(|stack_popper| {
-            let constant_wrapped_token_res = stack_popper.pop_front();
-            let constant_token_res = match constant_wrapped_token_res {
-                Ok(token) => token,
-                Err(err) => return Err(err),
-            };
 
-            let constant_token = constant_token_res.token;
-            let constant = match constant_token {
-                Tokens::Constant(constant) => constant,
-                _ => return Err(ParseError {
-                    variant: ParseErrorVariants::NoMoreTokens(
-                        "Constant not found in expression".to_owned()
-                    ),
-                    token_stack: stack_popper.token_stack.soft_copy()
-                }),
-            };
-
-            let pop_context = stack_popper.build_pop_context();
-            let ast_constant = ASTConstant {
-                value: constant.clone(),
-                pop_context: Some(pop_context.clone())
-            };
-            Ok(Expression {
-                expr_item: ExpressionVariant::Constant(ast_constant),
-                pop_context: Some(pop_context.clone())
-            })
-        })
-    }
 }
 
 pub struct Statement {
