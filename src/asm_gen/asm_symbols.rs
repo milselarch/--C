@@ -276,7 +276,7 @@ impl AsmUnaryInstruction {
         operator: SupportedUnaryOperators
     ) -> Result<String, AsmGenError> {
         match operator {
-            SupportedUnaryOperators::Minus => Ok("negl".to_string()),
+            SupportedUnaryOperators::Subtract => Ok("negl".to_string()),
             SupportedUnaryOperators::BitwiseNot => Ok("notl".to_string()),
             _ => Err(AsmGenError::UnsupportedInstruction(
                 format!("Unsupported unary operator: {:?}", operator)

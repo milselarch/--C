@@ -50,13 +50,13 @@ impl Identifier {
 
 #[derive(Clone, Debug)]
 pub enum SupportedUnaryOperators {
-    Minus,
+    Subtract,
     BitwiseNot,
 }
 impl SupportedUnaryOperators {
     pub fn from_operator(op: Operators) -> Option<SupportedUnaryOperators> {
         match op {
-            Operators::Minus => Some(SupportedUnaryOperators::Minus),
+            Operators::Subtract => Some(SupportedUnaryOperators::Subtract),
             Operators::BitwiseNot => Some(SupportedUnaryOperators::BitwiseNot),
             _ => None,
         }
@@ -183,6 +183,8 @@ impl Expression {
             while let Some(
                 binary_operator
             ) = is_next_operator_consumable(&next_code_token) {
+                // consume the binary operator
+                stack_popper.pop_front().expect("Failed to pop binary operator");
                 let right_exp = Self::parse_as_exp(
                     &mut stack_popper.token_stack,
                     binary_operator.to_precedence() + 1
@@ -210,11 +212,11 @@ impl Expression {
         let front_code_token = wrapped_front_code_token.token.clone();
 
         let get_as_unop = |
-            token: Tokens
+            token: &Tokens
         | -> Result<SupportedUnaryOperators, ParseError> {
             match token {
                 Tokens::Operator(op) => {
-                    match SupportedUnaryOperators::from_operator_as_result(op) {
+                    match SupportedUnaryOperators::from_operator_as_result(*op) {
                         Ok(unop) => { Ok(unop) },
                         Err(err) => { Err(err) }
                     }
@@ -230,10 +232,10 @@ impl Expression {
 
         if let Tokens::Constant(_) = front_code_token {
             Self::parse_as_constant(tokens)
+        } else if let Ok(_) = get_as_unop(&front_code_token) {
+            Self::parse_as_unary_op(tokens)
         } else if let Tokens::Punctuator(Punctuators::OpenParens) = front_code_token {
             Self::parse_as_parens_wrapped(tokens)
-        } else if let Ok(_) = get_as_unop(front_code_token) {
-            Self::parse_as_unary_op(tokens)
         } else {
             return Err(ParseError {
                 variant: ParseErrorVariants::UnexpectedToken(format!(
@@ -490,6 +492,21 @@ mod tests {
     #[test]
     fn test_parse_unop_parens() {
         let file_path = "./writing-a-c-compiler-tests/tests/chapter_3/valid/unop_parens.c";
+        let lex_result = lex_from_filepath(file_path, true);
+
+        if lex_result.is_err() {
+            panic!("Lexer error: {:?}", lex_result.err().unwrap());
+        }
+
+        let tokens = lex_result.unwrap();
+        let mut token_stack = TokenStack::new_from_vec(tokens);
+        let parse_result = parse(&mut token_stack);
+        let program = parse_result.unwrap();
+        assert_eq!(program.function.name.name_to_string(), "main");
+    }
+    #[test]
+    fn test_parse_sub_neg() {
+        let file_path = "./writing-a-c-compiler-tests/tests/chapter_3/valid/sub_neg.c";
         let lex_result = lex_from_filepath(file_path, true);
 
         if lex_result.is_err() {

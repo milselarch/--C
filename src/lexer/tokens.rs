@@ -277,7 +277,6 @@ pub trait TokenBuilder: Display {
 #[derive(PartialEq, Copy, Clone, Debug, Eq, EnumIter)]
 pub enum Operators {
     Decrement,
-    Minus,
     BitwiseNot,
     Add,
     Subtract,
@@ -291,7 +290,6 @@ pub enum Operators {
 impl Operators {
     pub fn to_string(&self) -> String {
         match self {
-            Operators::Minus => "-".to_string(),
             Operators::BitwiseNot => "~".to_string(),
             Operators::Decrement => "--".to_string(),
             Operators::Add => "+".to_string(),
