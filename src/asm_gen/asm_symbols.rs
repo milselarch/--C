@@ -637,6 +637,9 @@ impl AsmImmediateValue {
             ExpressionVariant::UnaryOperation(_, _) => {
                 panic!("Unary operations not implemented yet");
             },
+            _ => {
+                panic!("Unsupported expression type for AsmImmediateValue");
+            }
         }
     }
 

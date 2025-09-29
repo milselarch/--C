@@ -85,6 +85,9 @@ impl TackyInstruction {
                     TackyValue::Var(new_var)
                 )
             }
+            _ => {
+                panic!("Unsupported expression variant in TackyInstruction unroll_expression");
+            }
         }
     }
 }
