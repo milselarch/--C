@@ -1,6 +1,7 @@
 use std::collections::VecDeque;
 use std::num::ParseIntError;
 use std::panic;
+use log::debug;
 use crate::lexer::lexer::{lex_from_filepath, Keywords, Tokens};
 use crate::lexer::tokens::{Operators, Punctuators};
 use crate::parser::parse::ExpressionVariant::UnaryOperation;
@@ -171,7 +172,7 @@ impl Expression {
         };
 
         tokens.run_with_rollback(|stack_popper| {
-            // <exp> ::= <factor> ( <binop> <factor> )*
+            // <exp> ::= <factor> | <exp> <binop> <exp>
             let mut left_expr = Expression::parse_as_factor(
                 &mut stack_popper.token_stack
             )?;
@@ -208,28 +209,39 @@ impl Expression {
         let wrapped_front_code_token = tokens.peek_front(true)?;
         let front_code_token = wrapped_front_code_token.token.clone();
 
-        match front_code_token {
-            Tokens::Constant(_) => {
-                Self::parse_as_constant(tokens)
-            },
-            Tokens::Operator(op) => {
-                match SupportedUnaryOperators::from_operator_as_result(op) {
-                    Ok(_) => { Self::parse_as_unary_op(tokens) },
-                    Err(err) => { Err(err) }
+        let get_as_unop = |
+            token: Tokens
+        | -> Result<SupportedUnaryOperators, ParseError> {
+            match token {
+                Tokens::Operator(op) => {
+                    match SupportedUnaryOperators::from_operator_as_result(op) {
+                        Ok(unop) => { Ok(unop) },
+                        Err(err) => { Err(err) }
+                    }
                 }
-            },
-            Tokens::Punctuator(Punctuators::OpenParens) => {
-                Self::parse_as_parens_wrapped(tokens)
-            },
-            _ => {
-                Err(ParseError {
+                _ => Err(ParseError {
                     variant: ParseErrorVariants::UnexpectedToken(format!(
-                        "Unexpected token at factor start \
-                        {wrapped_front_code_token}"
+                        "Unexpected token at factor: {token}"
                     )),
                     token_stack: tokens.soft_copy()
                 })
             }
+        };
+
+        if let Tokens::Constant(_) = front_code_token {
+            Self::parse_as_constant(tokens)
+        } else if let Tokens::Punctuator(Punctuators::OpenParens) = front_code_token {
+            Self::parse_as_parens_wrapped(tokens)
+        } else if let Ok(_) = get_as_unop(front_code_token) {
+            Self::parse_as_unary_op(tokens)
+        } else {
+            return Err(ParseError {
+                variant: ParseErrorVariants::UnexpectedToken(format!(
+                    "Unexpected token at factor start \
+                    {wrapped_front_code_token}"
+                )),
+                token_stack: tokens.soft_copy()
+            });
         }
     }
     fn parse_as_constant(tokens: &mut TokenStack) -> Result<Expression, ParseError> {
@@ -285,7 +297,7 @@ impl Expression {
                 });
             }
 
-            let sub_expression = Expression::parse_as_exp(&mut stack_popper.token_stack, 0)?;
+            let sub_expression = Expression::parse(&mut stack_popper.token_stack)?;
             const CLOSE_PUNCTUATOR: Tokens = Tokens::Punctuator(Punctuators::CloseParens);
             stack_popper.expect_pop_front(CLOSE_PUNCTUATOR)?;
             let expr_item = ExpressionVariant::ParensWrapped(
@@ -324,7 +336,9 @@ impl Expression {
                 }),
             };
 
-            let sub_expression = Expression::parse(&mut stack_popper.token_stack)?;
+            let sub_expression = Expression::parse_as_factor(
+                &mut stack_popper.token_stack
+            )?;
             Ok(Self {
                 pop_context: Some(stack_popper.build_pop_context()),
                 expr_item: ExpressionVariant::UnaryOperation(
@@ -464,4 +478,28 @@ pub fn parse_from_filepath(file_path: &str, verbose: bool) -> Result<ASTProgram,
     let mut token_stack = TokenStack::new_from_vec(tokens);
     let parse_result = parse(&mut token_stack);
     parse_result
+}
+
+
+#[cfg(test)]
+mod tests {
+    use crate::lexer::lexer::lex_from_filepath;
+    use crate::parser::parse::{parse, parse_from_filepath};
+    use crate::parser::parser_helpers::TokenStack;
+
+    #[test]
+    fn test_parse_unop_parens() {
+        let file_path = "./writing-a-c-compiler-tests/tests/chapter_3/valid/unop_parens.c";
+        let lex_result = lex_from_filepath(file_path, true);
+
+        if lex_result.is_err() {
+            panic!("Lexer error: {:?}", lex_result.err().unwrap());
+        }
+
+        let tokens = lex_result.unwrap();
+        let mut token_stack = TokenStack::new_from_vec(tokens);
+        let parse_result = parse(&mut token_stack);
+        let program = parse_result.unwrap();
+        assert_eq!(program.function.name.name_to_string(), "main");
+    }
 }
