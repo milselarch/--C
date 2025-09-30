@@ -399,7 +399,7 @@ mod tests {
         // println!("BUILDER LENGTH = {}", builder.get_length());
         assert_eq!(builder.add_char(' '), false);
         assert_eq!(builder.is_done(), true);
-        assert_eq!(builder.is_valid(), true)
+        assert_eq!(builder.is_accepting_or_done(), true)
     }
 
     #[test]

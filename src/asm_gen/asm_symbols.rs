@@ -145,10 +145,11 @@ impl HasPopContexts for AsmFunction {
 impl AsmSymbol for AsmFunction {
     fn to_asm_code(self) -> Result<String, AsmGenError> {
         /*
-        TODO: Should there be an extra layer for Assembly line generation?
+        TODO: Should there be an extra layer for abstracted
+            assembly instructions to architecturally specific ones?
         */
         let mut code = "".to_string();
-        println!("ASM_INSTRUCTIONS: {:?}", self.instructions);
+        // println!("ASM_INSTRUCTIONS: {:?}", self.instructions);
 
         code.push_str(&format!("{TAB}.globl {}", self.name));
         code.push_str(&*self.contexts_to_string());

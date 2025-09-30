@@ -205,9 +205,13 @@ pub trait TokenBuilder: Display {
         self._get_built_str().chars().count()
     }
 
-    fn is_valid(&self) -> bool {
+    fn is_accepting_or_done(&self) -> bool {
         let state = self.get_state();
         (state == TokenBuilderStates::Accepting) || (state == TokenBuilderStates::Done)
+    }
+
+    fn is_invalid(&self) -> bool {
+        self.get_state() == TokenBuilderStates::Invalid
     }
 
     fn is_accepting(&self) -> bool {
@@ -274,7 +278,7 @@ pub trait TokenBuilder: Display {
     fn build_token(&self) -> Option<Tokens>;
 }
 
-#[derive(PartialEq, Copy, Clone, Debug, Eq, EnumIter)]
+#[derive(PartialEq, Copy, Clone, Debug, Eq, EnumIter, Hash)]
 pub enum Operators {
     Decrement,
     BitwiseNot,
