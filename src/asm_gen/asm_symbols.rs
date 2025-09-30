@@ -200,7 +200,7 @@ impl ToStackAllocated for AsmFunction {
         let new_stack_allocations =
             alloc_buffer.build_changes().to_hash_map();
         let func_alloc_result =
-            StackAllocationResult::with_allocations(new_stack_value, new_stack_allocations);
+            StackAllocationResult::new_with_allocations(new_stack_value, new_stack_allocations);
 
         (new_function, func_alloc_result)
     }
@@ -437,7 +437,7 @@ impl ToStackAllocated for MovInstruction {
         alloc_buffer.apply_changes(dst_alloc_result.new_stack_allocations).unwrap();
 
         let new_instruction = MovInstruction { source, destination };
-        let alloc_result = StackAllocationResult::with_allocations(
+        let alloc_result = StackAllocationResult::new_with_allocations(
             stack_value,
             alloc_buffer.build_changes().to_hash_map()
         );
@@ -578,7 +578,7 @@ impl ToStackAllocated for AsmOperand {
                     new_stack_value += STACK_VARIABLE_SIZE;
                     new_allocations.insert(pseudo_register.id, stack_value);
                 }
-                let stack_alloc_result = StackAllocationResult::with_allocations(
+                let stack_alloc_result = StackAllocationResult::new_with_allocations(
                     new_stack_value, new_allocations
                 );
 

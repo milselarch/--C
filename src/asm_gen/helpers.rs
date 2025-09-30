@@ -170,13 +170,23 @@ impl StackAllocationResult {
             new_stack_allocations: HashMap::new()
         }
     }
-    pub fn with_allocations(
+    pub fn new_with_allocations(
         new_stack_value: u64,
         new_var_stack_allocations: HashMap<u64, u64>
     ) -> Self {
+        // TODO: make this private (redirect calls to new_from_buffered)
         StackAllocationResult {
             new_stack_value,
             new_stack_allocations: new_var_stack_allocations
+        }
+    }
+    pub fn new_from_buffered(
+        new_stack_value: u64,
+        buffered_allocations: BufferedHashMap<u64, u64>
+    ) -> Self {
+        StackAllocationResult {
+            new_stack_value,
+            new_stack_allocations: buffered_allocations.build_changes().to_hash_map()
         }
     }
 }
