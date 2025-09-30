@@ -1,3 +1,4 @@
+use std::fmt::format;
 use std::hash::{Hash, Hasher};
 use crate::parser::parse::{
     Identifier, ASTProgram, SupportedUnaryOperators, ASTFunction,
@@ -85,8 +86,12 @@ impl TackyInstruction {
                     TackyValue::Var(new_var)
                 )
             }
+            ExpressionVariant::ParensWrapped(sub_expr) => {
+                let inner_variant = sub_expr.expr_item;
+                Self::unroll_expression(inner_variant, var_counter)
+            }
             _ => {
-                panic!("Unsupported expression variant in TackyInstruction unroll_expression");
+                panic!("INVALID EXPR_ITEM {}", format!("{:?}", expr_item));
             }
         }
     }

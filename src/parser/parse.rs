@@ -75,7 +75,7 @@ impl SupportedUnaryOperators {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum SupportedBinaryOperators {
     Add,
     Subtract,
@@ -128,7 +128,7 @@ impl ASTConstant {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum ExpressionVariant {
     Constant(ASTConstant),
     UnaryOperation(SupportedUnaryOperators, Box<Expression>),
@@ -136,7 +136,7 @@ pub enum ExpressionVariant {
     BinaryOperation(SupportedBinaryOperators, Box<Expression>, Box<Expression>)
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Expression {
     pub(crate) expr_item: ExpressionVariant,
     pub(crate) pop_context: Option<PoppedTokenContext>
