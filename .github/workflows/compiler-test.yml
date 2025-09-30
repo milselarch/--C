@@ -47,6 +47,7 @@ jobs:
           
           for chapter in "${CHAPTERS[@]}"; do
             for stage in "${STAGES[@]}"; do
+              echo "Testing chapter $chapter, stage ${stage:-all}"
               if [ -z "$stage" ]; then
                 python writing-a-c-compiler-tests/test_compiler ./target/release/ca-compiler --chapter "$chapter"
               else
