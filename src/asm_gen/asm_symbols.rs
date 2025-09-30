@@ -1,13 +1,16 @@
 use std::collections::HashMap;
 use std::fmt::format;
 use crate::parser::parse::{
-    Expression, ExpressionVariant, Statement, SupportedUnaryOperators
+    Expression, ExpressionVariant, Statement,
+    SupportedBinaryOperators, SupportedUnaryOperators
 };
 use helpers::ToStackAllocated;
+use crate::asm_gen::binary_instruction::AsmBinaryInstruction;
 use crate::asm_gen::helpers;
 use crate::asm_gen::helpers::{
     AppendOnlyHashMap, BufferedHashMap, DiffableHashMap, StackAllocationResult
 };
+use crate::asm_gen::unary_instruction::AsmUnaryInstruction;
 use crate::parser::parser_helpers::{ParseError, PoppedTokenContext};
 use crate::tacky::tacky_symbols::{
     tacky_gen_from_filepath, TackyFunction, TackyInstruction, TackyProgram,
@@ -206,13 +209,17 @@ impl ToStackAllocated for AsmFunction {
 #[derive(Clone, Debug)]
 pub enum Register {
     EAX,
-    R10D
+    EDX,
+    R10D,
+    R11D,
 }
 impl AsmSymbol for Register {
     fn to_asm_code(self) -> Result<String, AsmGenError> {
         match self {
             Register::EAX => Ok("%eax".to_string()),
             Register::R10D => Ok("%r10d".to_string()),
+            Register::EDX => Ok("%edx".to_string()),
+            Register::R11D => Ok("%r11d".to_string()),
         }
     }
 }
@@ -268,49 +275,12 @@ impl PseudoRegister {
 }
 
 #[derive(Clone, Debug)]
-pub struct AsmUnaryInstruction {
-    operator: SupportedUnaryOperators,
-    destination: AsmOperand,
-}
-impl AsmUnaryInstruction {
-    fn operator_to_asm_string(
-        operator: SupportedUnaryOperators
-    ) -> Result<String, AsmGenError> {
-        match operator {
-            SupportedUnaryOperators::Subtract => Ok("negl".to_string()),
-            SupportedUnaryOperators::BitwiseNot => Ok("notl".to_string()),
-            _ => Err(AsmGenError::UnsupportedInstruction(
-                format!("Unsupported unary operator: {:?}", operator)
-            )),
-        }
-    }
-}
-impl ToStackAllocated for AsmUnaryInstruction {
-    fn to_stack_allocated(
-        &self, stack_value: u64,
-        allocations: &dyn DiffableHashMap<u64, u64>
-    ) -> (Self, StackAllocationResult) {
-        let (operand, alloc_result) =
-            self.destination.to_stack_allocated(stack_value, allocations);
-        let new_instruction = AsmUnaryInstruction {
-            operator: self.operator.clone(),
-            destination: operand,
-        };
-        (new_instruction, alloc_result)
-    }
-}
-impl AsmSymbol for AsmUnaryInstruction {
-    fn to_asm_code(self) -> Result<String, AsmGenError> {
-        let operand_asm = self.destination.to_asm_code()?;
-        let operator_asm = Self::operator_to_asm_string(self.operator)?;
-        Ok(format!("{} {}", operator_asm, operand_asm))
-    }
-}
-
-#[derive(Clone, Debug)]
 pub enum AsmInstruction {
     Mov(MovInstruction),
     Unary(AsmUnaryInstruction),
+    Binary(AsmBinaryInstruction),
+    IntegerDivision(AsmOperand),
+    SignExtension,
     AllocateStack(StackAllocation),
     Ret,
 }
@@ -333,6 +303,11 @@ impl AsmSymbol for AsmInstruction {
                 code.push_str("ret\n");
                 Ok(code.to_string())
             },
+            _ => {
+                Err(AsmGenError::InvalidInstructionType(
+                    format!("Unsupported AsmInstruction: {:?}", self)
+                ))
+            }
         }
     }
 }
