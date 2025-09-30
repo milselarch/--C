@@ -31,6 +31,12 @@ impl ParseError {
             token_stack: token_stack.soft_copy(),
         }
     }
+    pub fn new_without_stack(error_variant: ParseErrorVariants) -> ParseError {
+        ParseError {
+            variant: error_variant,
+            token_stack: TokenStack::new(VecDeque::new()),
+        }
+    }
     pub fn message(&self) -> String {
         match &self.variant {
             ParseErrorVariants::GenericError(msg) => msg.clone(),

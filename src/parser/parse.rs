@@ -1,6 +1,7 @@
 use std::collections::VecDeque;
 use std::num::ParseIntError;
 use std::panic;
+use log::debug;
 use crate::lexer::lexer::{lex_from_filepath, Keywords, Tokens};
 use crate::lexer::tokens::{Operators, Punctuators};
 use crate::parser::parse::ExpressionVariant::UnaryOperation;
@@ -49,13 +50,13 @@ impl Identifier {
 
 #[derive(Clone, Debug)]
 pub enum SupportedUnaryOperators {
-    Minus,
+    Subtract,
     BitwiseNot,
 }
 impl SupportedUnaryOperators {
     pub fn from_operator(op: Operators) -> Option<SupportedUnaryOperators> {
         match op {
-            Operators::Minus => Some(SupportedUnaryOperators::Minus),
+            Operators::Subtract => Some(SupportedUnaryOperators::Subtract),
             Operators::BitwiseNot => Some(SupportedUnaryOperators::BitwiseNot),
             _ => None,
         }
@@ -65,12 +66,53 @@ impl SupportedUnaryOperators {
     ) -> Result<SupportedUnaryOperators, ParseError> {
         match Self::from_operator(op) {
             Some(supported_op) => Ok(supported_op),
-            None => Err(ParseError {
-                variant: ParseErrorVariants::UnexpectedToken(
+            None => Err(ParseError::new_without_stack(
+                ParseErrorVariants::UnexpectedToken(
                     format!("Unsupported unary operator {op}")
                 ),
-                token_stack: TokenStack::new(VecDeque::new())
-            }),
+            ))
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub enum SupportedBinaryOperators {
+    Add,
+    Subtract,
+    Multiply,
+    Divide,
+    Modulus,
+}
+impl SupportedBinaryOperators {
+    pub fn from_operator(op: Operators) -> Option<SupportedBinaryOperators> {
+        match op {
+            Operators::Add => Some(SupportedBinaryOperators::Add),
+            Operators::Subtract => Some(SupportedBinaryOperators::Subtract),
+            Operators::Multiply => Some(SupportedBinaryOperators::Multiply),
+            Operators::Divide => Some(SupportedBinaryOperators::Divide),
+            Operators::Modulus => Some(SupportedBinaryOperators::Modulus),
+            _ => None,
+        }
+    }
+    pub fn to_precedence(&self) -> u8 {
+        match self {
+            SupportedBinaryOperators::Add => 45,
+            SupportedBinaryOperators::Subtract => 45,
+            SupportedBinaryOperators::Multiply => 50,
+            SupportedBinaryOperators::Divide => 50,
+            SupportedBinaryOperators::Modulus => 50,
+        }
+    }
+    pub fn from_operator_as_result(
+        op: Operators
+    ) -> Result<SupportedBinaryOperators, ParseError> {
+        match Self::from_operator(op) {
+            Some(supported_op) => Ok(supported_op),
+            None => Err(ParseError::new_without_stack(
+                ParseErrorVariants::UnexpectedToken(
+                    format!("Unsupported binary operator {op}")
+                ),
+            )),
         }
     }
 }
@@ -86,14 +128,15 @@ impl ASTConstant {
     }
 }
 
-
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum ExpressionVariant {
     Constant(ASTConstant),
-    UnaryOperation(SupportedUnaryOperators, Box<Expression>)
+    UnaryOperation(SupportedUnaryOperators, Box<Expression>),
+    ParensWrapped(Box<Expression>),
+    BinaryOperation(SupportedBinaryOperators, Box<Expression>, Box<Expression>)
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Expression {
     pub(crate) expr_item: ExpressionVariant,
     pub(crate) pop_context: Option<PoppedTokenContext>
@@ -105,36 +148,135 @@ impl Expression {
             pop_context: None
         }
     }
-
     fn parse(tokens: &mut TokenStack) -> Result<Expression, ParseError> {
+        Self::parse_as_exp(tokens, 0)
+    }
+    fn parse_as_exp(
+        tokens: &mut TokenStack, min_precedence: u8
+    ) -> Result<Expression, ParseError> {
+        let is_next_operator_consumable = |
+            token: &Tokens
+        | -> Option<SupportedBinaryOperators> {
+            let binary_operator = match token {
+                Tokens::Operator(op) => {
+                    SupportedBinaryOperators::from_operator(*op)
+                },
+                _ => None
+            };
+            if let Some(ref bin_op) = binary_operator {
+                if bin_op.to_precedence() >= min_precedence {
+                    return binary_operator;
+                }
+            }
+            binary_operator
+        };
+
+        tokens.run_with_rollback(|stack_popper| {
+            // <exp> ::= <factor> | <exp> <binop> <exp>
+            let mut left_expr = Expression::parse_as_factor(
+                &mut stack_popper.token_stack
+            )?;
+
+            let wrapped_next_code_token = stack_popper.token_stack.peek_front(true)?;
+            let mut next_code_token = wrapped_next_code_token.token.clone();
+
+            while let Some(
+                binary_operator
+            ) = is_next_operator_consumable(&next_code_token) {
+                // consume the binary operator
+                stack_popper.pop_front().expect("Failed to pop binary operator");
+                let right_exp = Self::parse_as_exp(
+                    &mut stack_popper.token_stack,
+                    binary_operator.to_precedence() + 1
+                )?;
+                left_expr = Expression {
+                    expr_item: ExpressionVariant::BinaryOperation(
+                        binary_operator,
+                        Box::new(left_expr),
+                        Box::new(right_exp)
+                    ),
+                    pop_context: Some(stack_popper.build_pop_context())
+                };
+
+                let wrapped_next_code_token = stack_popper.token_stack.peek_front(true)?;
+                next_code_token = wrapped_next_code_token.token.clone();
+            }
+
+            Ok(left_expr)
+        })
+    }
+
+    pub fn parse_as_factor(tokens: &mut TokenStack) -> Result<Expression, ParseError> {
+        // <factor> ::= <int> | <unop> <factor> | "(" <exp> ")"
         let wrapped_front_code_token = tokens.peek_front(true)?;
         let front_code_token = wrapped_front_code_token.token.clone();
 
-        match front_code_token {
-            Tokens::Punctuator(Punctuators::OpenParens) => {
-                Self::parse_as_parens_wrapped(tokens)
-            },
-            Tokens::Operator(op) => {
-                match SupportedUnaryOperators::from_operator_as_result(op) {
-                    Ok(_) => { Self::parse_as_unary_op(tokens) },
-                    Err(err) => { Err(err) }
+        let get_as_unop = |
+            token: &Tokens
+        | -> Result<SupportedUnaryOperators, ParseError> {
+            match token {
+                Tokens::Operator(op) => {
+                    match SupportedUnaryOperators::from_operator_as_result(*op) {
+                        Ok(unop) => { Ok(unop) },
+                        Err(err) => { Err(err) }
+                    }
                 }
-            },
-            Tokens::Constant(_) => {
-                Self::parse_as_constant(tokens)
-            },
-            _ => {
-                Err(ParseError {
+                _ => Err(ParseError {
                     variant: ParseErrorVariants::UnexpectedToken(format!(
-                        "Unexpected token at expression start \
-                        {wrapped_front_code_token}"
+                        "Unexpected token at factor: {token}"
                     )),
                     token_stack: tokens.soft_copy()
                 })
             }
+        };
+
+        if let Tokens::Constant(_) = front_code_token {
+            Self::parse_as_constant(tokens)
+        } else if let Ok(_) = get_as_unop(&front_code_token) {
+            Self::parse_as_unary_op(tokens)
+        } else if let Tokens::Punctuator(Punctuators::OpenParens) = front_code_token {
+            Self::parse_as_parens_wrapped(tokens)
+        } else {
+            return Err(ParseError {
+                variant: ParseErrorVariants::UnexpectedToken(format!(
+                    "Unexpected token at factor start \
+                    {wrapped_front_code_token}"
+                )),
+                token_stack: tokens.soft_copy()
+            });
         }
     }
+    fn parse_as_constant(tokens: &mut TokenStack) -> Result<Expression, ParseError> {
+        // <exp> ::= Constant(<int>)
+        tokens.run_with_rollback(|stack_popper| {
+            let constant_wrapped_token_res = stack_popper.pop_front();
+            let constant_token_res = match constant_wrapped_token_res {
+                Ok(token) => token,
+                Err(err) => return Err(err),
+            };
 
+            let constant_token = constant_token_res.token;
+            let constant = match constant_token {
+                Tokens::Constant(constant) => constant,
+                _ => return Err(ParseError {
+                    variant: ParseErrorVariants::NoMoreTokens(
+                        "Constant not found in factor".to_owned()
+                    ),
+                    token_stack: stack_popper.token_stack.soft_copy()
+                }),
+            };
+
+            let pop_context = stack_popper.build_pop_context();
+            let ast_constant = ASTConstant {
+                value: constant.clone(),
+                pop_context: Some(pop_context.clone())
+            };
+            Ok(Expression {
+                expr_item: ExpressionVariant::Constant(ast_constant),
+                pop_context: Some(pop_context.clone())
+            })
+        })
+    }
     fn parse_as_parens_wrapped(tokens: &mut TokenStack) -> Result<Expression, ParseError> {
         /*
         Try to parse a parenthesized expression first
@@ -158,10 +300,14 @@ impl Expression {
             }
 
             let sub_expression = Expression::parse(&mut stack_popper.token_stack)?;
-            stack_popper.expect_pop_front(Tokens::Punctuator(Punctuators::CloseParens))?;
+            const CLOSE_PUNCTUATOR: Tokens = Tokens::Punctuator(Punctuators::CloseParens);
+            stack_popper.expect_pop_front(CLOSE_PUNCTUATOR)?;
+            let expr_item = ExpressionVariant::ParensWrapped(
+                Box::new(sub_expression.clone())
+            );
 
             Ok(Self {
-                expr_item: sub_expression.expr_item,
+                expr_item,
                 pop_context: Some(stack_popper.build_pop_context())
             })
         })
@@ -192,44 +338,14 @@ impl Expression {
                 }),
             };
 
-            let sub_expression = Expression::parse(&mut stack_popper.token_stack)?;
+            let sub_expression = Expression::parse_as_factor(
+                &mut stack_popper.token_stack
+            )?;
             Ok(Self {
                 pop_context: Some(stack_popper.build_pop_context()),
                 expr_item: ExpressionVariant::UnaryOperation(
                     operator, Box::new(sub_expression)
                 )
-            })
-        })
-    }
-
-    fn parse_as_constant(tokens: &mut TokenStack) -> Result<Expression, ParseError> {
-        // <exp> ::= Constant(<int>)
-        tokens.run_with_rollback(|stack_popper| {
-            let constant_wrapped_token_res = stack_popper.pop_front();
-            let constant_token_res = match constant_wrapped_token_res {
-                Ok(token) => token,
-                Err(err) => return Err(err),
-            };
-
-            let constant_token = constant_token_res.token;
-            let constant = match constant_token {
-                Tokens::Constant(constant) => constant,
-                _ => return Err(ParseError {
-                    variant: ParseErrorVariants::NoMoreTokens(
-                        "Constant not found in expression".to_owned()
-                    ),
-                    token_stack: stack_popper.token_stack.soft_copy()
-                }),
-            };
-
-            let pop_context = stack_popper.build_pop_context();
-            let ast_constant = ASTConstant {
-                value: constant.clone(),
-                pop_context: Some(pop_context.clone())
-            };
-            Ok(Expression {
-                expr_item: ExpressionVariant::Constant(ast_constant),
-                pop_context: Some(pop_context.clone())
             })
         })
     }
@@ -252,9 +368,7 @@ impl Statement {
             // <statement> ::= "return" <exp> ";"
             stack_popper.expect_pop_front(Tokens::Keyword(Keywords::Return))?;
 
-            let expression = Expression::parse(
-                stack_popper.token_stack
-            )?;
+            let expression = Expression::parse(stack_popper.token_stack)?;
             let punctuator_keyword_opt = stack_popper.pop_front();
             let punctuator_wrapped_keyword = match punctuator_keyword_opt {
                 Ok(token) => token,
@@ -366,4 +480,43 @@ pub fn parse_from_filepath(file_path: &str, verbose: bool) -> Result<ASTProgram,
     let mut token_stack = TokenStack::new_from_vec(tokens);
     let parse_result = parse(&mut token_stack);
     parse_result
+}
+
+
+#[cfg(test)]
+mod tests {
+    use crate::lexer::lexer::lex_from_filepath;
+    use crate::parser::parse::{parse, parse_from_filepath};
+    use crate::parser::parser_helpers::TokenStack;
+
+    #[test]
+    fn test_parse_unop_parens() {
+        let file_path = "./writing-a-c-compiler-tests/tests/chapter_3/valid/unop_parens.c";
+        let lex_result = lex_from_filepath(file_path, true);
+
+        if lex_result.is_err() {
+            panic!("Lexer error: {:?}", lex_result.err().unwrap());
+        }
+
+        let tokens = lex_result.unwrap();
+        let mut token_stack = TokenStack::new_from_vec(tokens);
+        let parse_result = parse(&mut token_stack);
+        let program = parse_result.unwrap();
+        assert_eq!(program.function.name.name_to_string(), "main");
+    }
+    #[test]
+    fn test_parse_sub_neg() {
+        let file_path = "./writing-a-c-compiler-tests/tests/chapter_3/valid/sub_neg.c";
+        let lex_result = lex_from_filepath(file_path, true);
+
+        if lex_result.is_err() {
+            panic!("Lexer error: {:?}", lex_result.err().unwrap());
+        }
+
+        let tokens = lex_result.unwrap();
+        let mut token_stack = TokenStack::new_from_vec(tokens);
+        let parse_result = parse(&mut token_stack);
+        let program = parse_result.unwrap();
+        assert_eq!(program.function.name.name_to_string(), "main");
+    }
 }

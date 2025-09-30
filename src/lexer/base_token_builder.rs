@@ -1,4 +1,4 @@
-#[derive(PartialEq, Copy, Clone, Debug)]
+#[derive(PartialEq, Copy, Clone, Debug, Eq, Hash)]
 pub enum TokenBuilderStates {
     Start,
     Accepting,
@@ -6,7 +6,7 @@ pub enum TokenBuilderStates {
     Done,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, Hash)]
 pub struct BaseTokenBuilder {
     built_string: String,
     state: TokenBuilderStates,
@@ -32,6 +32,10 @@ impl BaseTokenBuilder {
 
     pub fn set_done(&mut self) {
         self.state = TokenBuilderStates::Done;
+    }
+    
+    pub fn set_invalid(&mut self) {
+        self.state = TokenBuilderStates::Invalid;
     }
 
     pub fn set_state(&mut self, state: TokenBuilderStates) {

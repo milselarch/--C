@@ -34,34 +34,24 @@ jobs:
       - name: Build project
         run: cargo build --release
 
-      - name: Chapter 1 - Lexing
+      - name: Test recent chapter
         run: |
-          python writing-a-c-compiler-tests/test_compiler ./target/release/ca-compiler --chapter 1 --stage lex
+          python writing-a-c-compiler-tests/test_compiler ./target/release/ca-compiler --chapter 3 --stage lex; 
+          python writing-a-c-compiler-tests/test_compiler ./target/release/ca-compiler --chapter 3 --stage parse;
 
-      - name: Chapter 1 - Parsing
+      - name: Test full chapters
         run: |
-          python writing-a-c-compiler-tests/test_compiler ./target/release/ca-compiler --chapter 1 --stage parse
-
-      - name: Chapter 1 - ASM Generation
-        run: |
-          python writing-a-c-compiler-tests/test_compiler ./target/release/ca-compiler --chapter 1 --stage codegen
-
-      - name: Chapter 1 - Compilation
-        run: |
-          python writing-a-c-compiler-tests/test_compiler ./target/release/ca-compiler --chapter 1
-
-      - name: Chapter 2 - Lexing
-        run: |
-          python writing-a-c-compiler-tests/test_compiler ./target/release/ca-compiler --chapter 2 --stage lex
-
-      - name: Chapter 2 - ASM Generation
-        run: |
-          python writing-a-c-compiler-tests/test_compiler ./target/release/ca-compiler --chapter 2 --stage codegen
-
-      - name: Chapter 2 - Tacky
-        run: |
-          python writing-a-c-compiler-tests/test_compiler ./target/release/ca-compiler --chapter 2 --stage tacky
-
-      - name: Chapter 2 - Compilation
-        run: |
-          python writing-a-c-compiler-tests/test_compiler ./target/release/ca-compiler --chapter 2
+          #!/bin/bash
+          CHAPTERS=(1 2)
+          STAGES=("lex" "parse" "codegen" "tacky" "")
+          
+          for chapter in "${CHAPTERS[@]}"; do
+            for stage in "${STAGES[@]}"; do
+              echo "Testing chapter $chapter, stage ${stage:-all}"
+              if [ -z "$stage" ]; then
+                python writing-a-c-compiler-tests/test_compiler ./target/release/ca-compiler --chapter "$chapter"
+              else
+                python writing-a-c-compiler-tests/test_compiler ./target/release/ca-compiler --chapter "$chapter" --stage "$stage"
+              fi
+            done
+          done

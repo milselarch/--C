@@ -205,9 +205,13 @@ pub trait TokenBuilder: Display {
         self._get_built_str().chars().count()
     }
 
-    fn is_valid(&self) -> bool {
+    fn is_accepting_or_done(&self) -> bool {
         let state = self.get_state();
         (state == TokenBuilderStates::Accepting) || (state == TokenBuilderStates::Done)
+    }
+
+    fn is_invalid(&self) -> bool {
+        self.get_state() == TokenBuilderStates::Invalid
     }
 
     fn is_accepting(&self) -> bool {
@@ -274,16 +278,15 @@ pub trait TokenBuilder: Display {
     fn build_token(&self) -> Option<Tokens>;
 }
 
-#[derive(PartialEq, Copy, Clone, Debug, Eq, EnumIter)]
+#[derive(PartialEq, Copy, Clone, Debug, Eq, EnumIter, Hash)]
 pub enum Operators {
     Decrement,
-    Minus,
     BitwiseNot,
     Add,
     Subtract,
     Multiply,
     Divide,
-    Remainder,
+    Modulus,
     BitwiseXor,
     LeftShift,
     RightShift,
@@ -291,14 +294,13 @@ pub enum Operators {
 impl Operators {
     pub fn to_string(&self) -> String {
         match self {
-            Operators::Minus => "-".to_string(),
             Operators::BitwiseNot => "~".to_string(),
             Operators::Decrement => "--".to_string(),
             Operators::Add => "+".to_string(),
             Operators::Subtract => "-".to_string(),
             Operators::Multiply => "*".to_string(),
             Operators::Divide => "/".to_string(),
-            Operators::Remainder => "%".to_string(),
+            Operators::Modulus => "%".to_string(),
             Operators::BitwiseXor => "^".to_string(),
             Operators::LeftShift => "<<".to_string(),
             Operators::RightShift => ">>".to_string(),

@@ -145,10 +145,11 @@ impl HasPopContexts for AsmFunction {
 impl AsmSymbol for AsmFunction {
     fn to_asm_code(self) -> Result<String, AsmGenError> {
         /*
-        TODO: Should there be an extra layer for Assembly line generation?
+        TODO: Should there be an extra layer for abstracted
+            assembly instructions to architecturally specific ones?
         */
         let mut code = "".to_string();
-        println!("ASM_INSTRUCTIONS: {:?}", self.instructions);
+        // println!("ASM_INSTRUCTIONS: {:?}", self.instructions);
 
         code.push_str(&format!("{TAB}.globl {}", self.name));
         code.push_str(&*self.contexts_to_string());
@@ -276,7 +277,7 @@ impl AsmUnaryInstruction {
         operator: SupportedUnaryOperators
     ) -> Result<String, AsmGenError> {
         match operator {
-            SupportedUnaryOperators::Minus => Ok("negl".to_string()),
+            SupportedUnaryOperators::Subtract => Ok("negl".to_string()),
             SupportedUnaryOperators::BitwiseNot => Ok("notl".to_string()),
             _ => Err(AsmGenError::UnsupportedInstruction(
                 format!("Unsupported unary operator: {:?}", operator)
@@ -637,6 +638,9 @@ impl AsmImmediateValue {
             ExpressionVariant::UnaryOperation(_, _) => {
                 panic!("Unary operations not implemented yet");
             },
+            _ => {
+                panic!("Unsupported expression type for AsmImmediateValue");
+            }
         }
     }
 
