@@ -378,6 +378,9 @@ impl AsmInstruction {
                     AsmInstruction::Ret
                 ]
             },
+            _ => {
+                panic!("Unsupported TackyInstruction: {:?}", tacky_instruction);
+            }
         }
     }
 }

@@ -1,4 +1,4 @@
-name: CA Compiler Chapter Tests
+name: C Compiler Chapter Tests
 
 on:
   push:
