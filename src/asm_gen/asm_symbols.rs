@@ -5,17 +5,15 @@ use crate::parser::parse::{
     SupportedBinaryOperators, SupportedUnaryOperators
 };
 use helpers::ToStackAllocated;
-use crate::asm_gen::binary_instruction::AsmBinaryInstruction;
+use crate::asm_gen::binary_instruction::{AsmBinaryInstruction, AsmBinaryOperators};
 use crate::asm_gen::helpers;
 use crate::asm_gen::helpers::{
     AppendOnlyHashMap, BufferedHashMap, DiffableHashMap, StackAllocationResult
 };
+use crate::asm_gen::interger_division::AsmIntegerDivision;
 use crate::asm_gen::unary_instruction::AsmUnaryInstruction;
 use crate::parser::parser_helpers::{ParseError, PoppedTokenContext};
-use crate::tacky::tacky_symbols::{
-    tacky_gen_from_filepath, TackyFunction, TackyInstruction, TackyProgram,
-    TackyValue, TackyVariable
-};
+use crate::tacky::tacky_symbols::{tacky_gen_from_filepath, BinaryInstruction, TackyFunction, TackyInstruction, TackyProgram, TackyValue, TackyVariable};
 
 const STACK_VARIABLE_SIZE: u64 = 4; // bytes
 const TAB: &str = "    ";
@@ -208,9 +206,9 @@ impl ToStackAllocated for AsmFunction {
 
 #[derive(Clone, Debug)]
 pub enum Register {
-    EAX,
-    EDX,
-    R10D,
+    EAX, // division quotient register 1 + division result register
+    EDX, // division quotient register 2 + division remainder register
+    R10D, // scratch register
     R11D,
 }
 impl AsmSymbol for Register {
@@ -279,7 +277,7 @@ pub enum AsmInstruction {
     Mov(MovInstruction),
     Unary(AsmUnaryInstruction),
     Binary(AsmBinaryInstruction),
-    IntegerDivision(AsmOperand),
+    IntegerDivision(AsmIntegerDivision),
     SignExtension,
     AllocateStack(StackAllocation),
     Ret,
@@ -293,6 +291,9 @@ impl AsmSymbol for AsmInstruction {
             AsmInstruction::Unary(unary_instruction) => {
                 Ok(unary_instruction.to_asm_code()?)
             },
+            AsmInstruction::Binary(binary_instruction) => {
+                Ok(binary_instruction.to_asm_code()?)
+            }
             AsmInstruction::AllocateStack(stack_allocation) => {
                 Ok(stack_allocation.to_asm_code()?)
             },
@@ -316,23 +317,6 @@ impl AsmInstruction {
         tacky_instruction: TackyInstruction
     ) -> Vec<Self> {
         match tacky_instruction {
-            TackyInstruction::UnaryInstruction(unary_instruction) => {
-                let src_operand = AsmOperand::from_tacky_value(unary_instruction.src);
-                let dst_operand = AsmOperand::from_tacky_value(
-                    TackyValue::Var(unary_instruction.dst)
-                );
-                let asm_mov_instruction = MovInstruction::new(
-                    src_operand, dst_operand.clone()
-                );
-                let asm_unary_instruction = AsmUnaryInstruction {
-                    operator: unary_instruction.operator,
-                    destination: dst_operand
-                };
-                vec![
-                    AsmInstruction::Mov(asm_mov_instruction),
-                    AsmInstruction::Unary(asm_unary_instruction)
-                ]
-            },
             TackyInstruction::Return(tacky_value) => {
                 let src_operand = match tacky_value {
                     TackyValue::Constant(ast_constant) => {
@@ -353,9 +337,26 @@ impl AsmInstruction {
                     AsmInstruction::Ret
                 ]
             },
-            _ => {
-                panic!("Unsupported TackyInstruction: {:?}", tacky_instruction);
-            }
+            TackyInstruction::UnaryInstruction(unary_instruction) => {
+                let src_operand = AsmOperand::from_tacky_value(unary_instruction.src);
+                let dst_operand = AsmOperand::from_tacky_value(
+                    TackyValue::Var(unary_instruction.dst)
+                );
+                let asm_mov_instruction = MovInstruction::new(
+                    src_operand, dst_operand.clone()
+                );
+                let asm_unary_instruction = AsmUnaryInstruction {
+                    operator: unary_instruction.operator,
+                    destination: dst_operand
+                };
+                vec![
+                    AsmInstruction::Mov(asm_mov_instruction),
+                    AsmInstruction::Unary(asm_unary_instruction)
+                ]
+            },
+            TackyInstruction::BinaryInstruction(binary_instruction) => {
+                AsmBinaryInstruction::unpack_from_tacky(binary_instruction)
+            },
         }
     }
 }

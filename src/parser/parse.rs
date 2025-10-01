@@ -81,7 +81,7 @@ pub enum SupportedBinaryOperators {
     Subtract,
     Multiply,
     Divide,
-    Modulus,
+    Modulo,
 }
 impl SupportedBinaryOperators {
     pub fn from_operator(op: Operators) -> Option<SupportedBinaryOperators> {
@@ -90,7 +90,7 @@ impl SupportedBinaryOperators {
             Operators::Subtract => Some(SupportedBinaryOperators::Subtract),
             Operators::Multiply => Some(SupportedBinaryOperators::Multiply),
             Operators::Divide => Some(SupportedBinaryOperators::Divide),
-            Operators::Modulus => Some(SupportedBinaryOperators::Modulus),
+            Operators::Modulo => Some(SupportedBinaryOperators::Modulo),
             _ => None,
         }
     }
@@ -100,7 +100,7 @@ impl SupportedBinaryOperators {
             SupportedBinaryOperators::Subtract => 45,
             SupportedBinaryOperators::Multiply => 50,
             SupportedBinaryOperators::Divide => 50,
-            SupportedBinaryOperators::Modulus => 50,
+            SupportedBinaryOperators::Modulo => 50,
         }
     }
     pub fn from_operator_as_result(
