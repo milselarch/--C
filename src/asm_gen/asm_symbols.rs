@@ -16,7 +16,7 @@ use crate::parser::parser_helpers::{ParseError, PoppedTokenContext};
 use crate::tacky::tacky_symbols::{tacky_gen_from_filepath, BinaryInstruction, TackyFunction, TackyInstruction, TackyProgram, TackyValue, TackyVariable};
 
 const STACK_VARIABLE_SIZE: u64 = 4; // bytes
-const TAB: &str = "    ";
+pub const TAB: &str = "    ";
 pub const SCRATCH_REGISTER: &str = "%r10d";
 pub const MUL_SCRATCH_REGISTER: &str = "%r11d";
 const STACK_REGISTER: &str = "%rsp";
