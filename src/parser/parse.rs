@@ -519,4 +519,14 @@ mod tests {
         let program = parse_result.unwrap();
         assert_eq!(program.function.name.name_to_string(), "main");
     }
+    #[test]
+    fn test_parse_from_sub_neg() {
+        let file_path = "./writing-a-c-compiler-tests/tests/chapter_3/valid/sub_neg.c";
+        let parse_result = parse_from_filepath(file_path, true);
+        if parse_result.is_err() {
+            panic!("Parser error: {:?}", parse_result.err().unwrap());
+        }
+        let program = parse_result.unwrap();
+        assert_eq!(program.function.name.name_to_string(), "main");
+    }
 }

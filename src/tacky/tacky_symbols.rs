@@ -6,6 +6,11 @@ use crate::parser::parse::{
 };
 use crate::parser::parser_helpers::{ParseError, PoppedTokenContext};
 
+
+pub trait PrintableTacky {
+    fn print_tacky_code(&self, depth: u64) -> String;
+}
+
 #[derive(Debug, Clone)]
 pub struct TackyVariable {
     pub id: u64,
@@ -25,6 +30,12 @@ impl PartialEq for TackyVariable {
 impl Hash for TackyVariable {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.id.hash(state);
+    }
+}
+impl PrintableTacky for TackyVariable {
+    fn print_tacky_code(&self, depth: u64) -> String {
+        let indent = "  ".repeat(depth as usize);
+        format!("{}TackyVariable: id={}, name={}\n", indent, self.id, self.name)
     }
 }
 
@@ -61,6 +72,19 @@ impl TackyValue {
         }
     }
 }
+impl PrintableTacky for TackyValue {
+    fn print_tacky_code(&self, depth: u64) -> String {
+        let indent = "  ".repeat(depth as usize);
+        match self {
+            TackyValue::Constant(c) => {
+                format!("{}Constant: {}\n", indent, c.value)
+            },
+            TackyValue::Var(v) => {
+                format!("{}Var: id={}, name={}\n", indent, v.id, v.name)
+            }
+        }
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct UnaryInstruction {
@@ -72,6 +96,21 @@ pub struct UnaryInstruction {
 impl UnaryInstruction {
     pub fn to_tacky_instruction(&self) -> TackyInstruction {
         TackyInstruction::UnaryInstruction(self.clone())
+    }
+}
+impl PrintableTacky for UnaryInstruction {
+    fn print_tacky_code(&self, depth: u64) -> String {
+        let indent = "  ".repeat(depth as usize);
+        let mut result = String::new();
+        result.push_str(&format!("{indent}UnaryInstruction:\n"));
+        result.push_str(&format!(
+            "{indent}  Operator: {:?}\n", self.operator
+        ));
+        result.push_str(&format!("{indent}  Src:\n"));
+        result.push_str(&self.src.print_tacky_code(depth + 2));
+        result.push_str(&format!("{indent}  Dst:\n"));
+        result.push_str(&self.dst.print_tacky_code(depth + 2));
+        result
     }
 }
 
@@ -86,6 +125,23 @@ pub struct BinaryInstruction {
 impl BinaryInstruction {
     pub fn to_tacky_instruction(&self) -> TackyInstruction {
         TackyInstruction::BinaryInstruction(self.clone())
+    }
+}
+impl PrintableTacky for BinaryInstruction {
+    fn print_tacky_code(&self, depth: u64) -> String {
+        let indent = "  ".repeat(depth as usize);
+        let mut result = String::new();
+        result.push_str(&format!("{indent}BinaryInstruction:\n"));
+        result.push_str(&format!(
+            "{indent}  Operator: {:?}\n", self.operator
+        ));
+        result.push_str(&format!("{indent}  Left:\n"));
+        result.push_str(&self.left.print_tacky_code(depth + 2));
+        result.push_str(&format!("{indent}  Right:\n"));
+        result.push_str(&self.right.print_tacky_code(depth + 2));
+        result.push_str(&format!("{indent}  Dst:\n"));
+        result.push_str(&self.dst.print_tacky_code(depth + 2));
+        result
     }
 }
 
@@ -177,7 +233,25 @@ impl TackyInstruction {
         }
     }
 }
-
+impl PrintableTacky for TackyInstruction {
+    fn print_tacky_code(&self, depth: u64) -> String {
+        match self {
+            TackyInstruction::UnaryInstruction(unary) => {
+                unary.print_tacky_code(depth)
+            },
+            TackyInstruction::BinaryInstruction(binary) => {
+                binary.print_tacky_code(depth)
+            },
+            TackyInstruction::Return(value) => {
+                let indent = "  ".repeat(depth as usize);
+                let mut result = String::new();
+            result.push_str(&format!("{indent}Return:\n"));
+                result.push_str(&value.print_tacky_code(depth + 1));
+                result
+            }
+        }
+    }
+}
 
 pub struct TackyFunction {
     pub name: Identifier,
@@ -206,6 +280,18 @@ impl TackyFunction {
         self.name.name_to_string()
     }
 }
+impl PrintableTacky for TackyFunction {
+    fn print_tacky_code(&self, depth: u64) -> String {
+        let mut result = String::new();
+        let indent = "  ".repeat(depth as usize);
+        result.push_str(&format!("{}TackyFunction: {}\n", indent, self.name_to_string()));
+        result.push_str(&format!("{}  Instructions:\n", indent));
+        for instruction in &self.instructions {
+            result.push_str(&instruction.print_tacky_code(depth + 2));
+        }
+        result
+    }
+}
 
 pub struct TackyProgram {
     pub function: TackyFunction,
@@ -219,6 +305,15 @@ impl TackyProgram {
                 &program.function
             )
         };
+    }
+}
+impl PrintableTacky for TackyProgram {
+    fn print_tacky_code(&self, depth: u64) -> String {
+        let mut result = String::new();
+        let indent = "  ".repeat(depth as usize);
+        result.push_str(&format!("{}TackyProgram:\n", indent));
+        result.push_str(&*self.function.print_tacky_code(depth + 1));
+        result
     }
 }
 
