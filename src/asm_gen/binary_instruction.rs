@@ -1,3 +1,7 @@
+use std::cmp::PartialEq;
+use crate::asm_gen::asm_symbols::{
+    SCRATCH_REGISTER, MUL_SCRATCH_REGISTER
+};
 use crate::asm_gen::asm_symbols::{
     AsmGenError, AsmInstruction, AsmOperand, AsmSymbol,
     MovInstruction, Register
@@ -10,7 +14,7 @@ use crate::asm_gen::interger_division::AsmIntegerDivision;
 use crate::parser::parse::SupportedBinaryOperators;
 use crate::tacky::tacky_symbols::{BinaryInstruction, TackyValue};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum AsmBinaryOperators {
     Add,
     Subtract,
@@ -158,11 +162,62 @@ impl ToStackAllocated for AsmBinaryInstruction {
         (new_instruction, alloc_result)
     }
 }
+
+fn generate_multiply_asm(src_asm: String, dst_asm: String) -> String {
+    let mut asm_code: String = String::new();
+    // move destination to multiply scratch register first
+    asm_code.push_str(&format!("movl {dst_asm}, {MUL_SCRATCH_REGISTER}\n"));
+
+    let operator_asm = AsmBinaryOperators::Multiply.to_asm_string();
+    asm_code.push_str(&format!(
+        "{} {}, {}\n",
+        operator_asm, src_asm, MUL_SCRATCH_REGISTER
+    ));
+
+    // move multiply scratch register (modified inplace) back to destination
+    asm_code.push_str(&format!("movl {MUL_SCRATCH_REGISTER}, {dst_asm}"));
+    asm_code
+}
+
 impl AsmSymbol for AsmBinaryInstruction {
     fn to_asm_code(self) -> Result<String, AsmGenError> {
+        /*
+        e.g. addl -4(%rbp), -8(%rbp)
+        */
         let operator_asm = self.operator.to_asm_string();
-        let source_asm = self.source.to_asm_code()?;
-        let destination_asm = self.destination.to_asm_code()?;
-        Ok(format!("{} {}, {}", operator_asm, source_asm, destination_asm))
+        let is_src_stack_addr = self.source.is_stack_address();
+        let src_asm = self.source.to_asm_code()?;
+        let is_dst_stack_addr = self.destination.is_stack_address();
+        let dst_asm = self.destination.to_asm_code()?;
+
+        if is_src_stack_addr && is_dst_stack_addr {
+            /*
+            binary asm instructions where both source and destination
+            operands are stack allocated are not allowed in x86-64 assembly.
+            So we move the value to a scratch register first,
+            then move it to the stack address.
+            */
+            // TODO: maybe a new layer for asm rewrites would be cleaner
+            let mut asm_code: String = String::new();
+            asm_code.push_str(&format!("movl {src_asm}, {SCRATCH_REGISTER}\n"));
+
+            if self.operator == AsmBinaryOperators::Multiply {
+                asm_code.push_str(&*generate_multiply_asm(
+                    SCRATCH_REGISTER.to_string(), dst_asm
+                ))
+            } else {
+                asm_code.push_str(&format!(
+                    "{} {}, {}",
+                    operator_asm, SCRATCH_REGISTER, dst_asm
+                ));
+            }
+            Ok(asm_code)
+        } else {
+            if self.operator == AsmBinaryOperators::Multiply {
+                Ok(generate_multiply_asm(src_asm, dst_asm))
+            } else {
+                Ok(format!("{} {}, {}", operator_asm, src_asm, dst_asm))
+            }
+        }
     }
 }

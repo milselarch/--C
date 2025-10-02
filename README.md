@@ -17,6 +17,13 @@ Goals of this programming language:
       and infinite register size, but where the data size at each address 
       is finite still
 
+
+# Setup
+Rust is required to build the compiler.  
+Pull the C compiler tests submodule with `git submodule update --init --recursive`
+1. `cargo build --release`
+2. `./target/release/ca-compiler <YOUR_C_FILE.c>`
+
 ## Examples
 
 Test compilation on all test cases in chapter 2:

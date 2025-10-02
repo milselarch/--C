@@ -1,3 +1,4 @@
+use crate::asm_gen::asm_symbols::SCRATCH_REGISTER;
 use crate::asm_gen::asm_symbols::{AsmOperand, AsmSymbol};
 use crate::asm_gen::helpers::{
     DiffableHashMap, StackAllocationResult, ToStackAllocated
@@ -27,7 +28,16 @@ impl ToStackAllocated for AsmIntegerDivision {
 }
 impl AsmSymbol for AsmIntegerDivision {
     fn to_asm_code(self) -> Result<String, crate::asm_gen::asm_symbols::AsmGenError> {
+        let is_constant = self.operand.is_constant();
         let operand_asm = self.operand.to_asm_code()?;
-        Ok(format!("idivl {}", operand_asm))
+
+        if is_constant {
+            let mut asm_code: String = String::new();
+            asm_code.push_str(&format!("movl {operand_asm}, {SCRATCH_REGISTER}\n"));
+            asm_code.push_str(&format!("idivl {SCRATCH_REGISTER}"));
+            Ok(asm_code)
+        } else {
+            Ok(format!("idivl {}", operand_asm))
+        }
     }
 }

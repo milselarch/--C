@@ -17,7 +17,8 @@ use crate::tacky::tacky_symbols::{tacky_gen_from_filepath, BinaryInstruction, Ta
 
 const STACK_VARIABLE_SIZE: u64 = 4; // bytes
 const TAB: &str = "    ";
-const SCRATCH_REGISTER: &str = "%r10d";
+pub const SCRATCH_REGISTER: &str = "%r10d";
+pub const MUL_SCRATCH_REGISTER: &str = "%r11d";
 const STACK_REGISTER: &str = "%rsp";
 // base of current stack frame
 const BASE_REGISTER: &str = "%rbp";
@@ -297,6 +298,12 @@ impl AsmSymbol for AsmInstruction {
             AsmInstruction::AllocateStack(stack_allocation) => {
                 Ok(stack_allocation.to_asm_code()?)
             },
+            AsmInstruction::IntegerDivision(int_div_instruction) => {
+                Ok(int_div_instruction.to_asm_code()?)
+            },
+            AsmInstruction::SignExtension => {
+                Ok("cdq".parse().unwrap())
+            }
             AsmInstruction::Ret => {
                 let mut code = String::new();
                 code.push_str(&format!("movq {BASE_REGISTER}, {STACK_REGISTER}\n"));
@@ -376,10 +383,29 @@ impl ToStackAllocated for AsmInstruction {
                     unary_instruction.to_stack_allocated(stack_value, allocations);
                 (AsmInstruction::Unary(new_unary_instruction), alloc_result)
             },
-            others => {
-                // For other instructions, we assume they do not require stack allocation
-                (others.clone(), StackAllocationResult::new(stack_value))
+            AsmInstruction::Binary(binary_instruction) => {
+                let (new_binary_instruction, alloc_result) =
+                    binary_instruction.to_stack_allocated(stack_value, allocations);
+                (AsmInstruction::Binary(new_binary_instruction), alloc_result)
+            },
+            AsmInstruction::IntegerDivision(int_div_instruction) => {
+                let (new_int_div_instruction, alloc_result) =
+                    int_div_instruction.to_stack_allocated(stack_value, allocations);
+                (AsmInstruction::IntegerDivision(new_int_div_instruction), alloc_result)
+            },
+            AsmInstruction::AllocateStack(stack_allocation) => {
+                // Stack allocation is not needed, pass through
+                let clone = AsmInstruction::AllocateStack(stack_allocation.clone());
+                (clone, StackAllocationResult::new(stack_value))
             }
+            AsmInstruction::SignExtension => {
+                // Sign extension does not affect stack allocations
+                (self.clone(), StackAllocationResult::new(stack_value))
+            },
+            AsmInstruction::Ret => {
+                // Return does not affect stack allocations
+                (self.clone(), StackAllocationResult::new(stack_value))
+            },
         }
     }
 }
@@ -523,8 +549,8 @@ impl AsmSymbol for AsmOperand {
             AsmOperand::Pseudo(pseudo_register) => {
                 Err(AsmGenError::InvalidInstructionType(
                     format!(
-                        "Pseudo register {} not supported in assembly",
-                        pseudo_register.name
+                        "Pseudo register [{:?}] not supported in assembly",
+                        pseudo_register
                     )
                 ))
             },
@@ -641,11 +667,28 @@ impl AsmSymbol for AsmImmediateValue {
     }
 }
 
-
 pub fn asm_gen_from_filepath(
     file_path: &str, verbose: bool
 ) -> Result<AsmProgram, ParseError> {
     let tacky_program = tacky_gen_from_filepath(file_path, verbose)?;
     let asm_program = AsmProgram::from_tacky_program(tacky_program);
     Ok(asm_program)
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::asm_gen::asm_symbols::AsmSymbol;
+
+    #[test]
+    fn test_chapter_3_valid_sub() {
+        let file_path = "./writing-a-c-compiler-tests/tests/chapter_3/valid/sub_neg.c";
+        let asm_program = super::asm_gen_from_filepath(file_path, true).unwrap();
+        let _asm_code = asm_program.to_asm_code().unwrap();
+    }
+    #[test]
+    fn test_chapter_3_valid_precedence() {
+        let file_path = "./writing-a-c-compiler-tests/tests/chapter_3/valid/precedence.c";
+        let asm_program = super::asm_gen_from_filepath(file_path, true).unwrap();
+        let _asm_code = asm_program.to_asm_code().unwrap();
+    }
 }
