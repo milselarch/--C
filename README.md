@@ -11,7 +11,18 @@ Goals of this programming language:
        which it can be determined whether the program has halted
 4. True support for infinite length integers
    1. This is as opposed to arbitrary length integers with a length that is
-      bounded by the max address size (i.e. usize)
+      bounded by the largest int datatype
+   2. More specifically the infinite length integer should theoretically be able to 
+      actually grow to infinity assuming a machine with an infinite address space 
+      and infinite register size, but where the data size at each address 
+      is finite still
+
+
+# Setup
+Rust is required to build the compiler.  
+Pull the C compiler tests submodule with `git submodule update --init --recursive`
+1. `cargo build --release`
+2. `./target/release/ca-compiler <YOUR_C_FILE.c>`
 
 ## Examples
 

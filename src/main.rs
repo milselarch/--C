@@ -4,6 +4,8 @@ use std::io::{self};
 use std::path::Path;
 use crate::generator::compile_from_filepath;
 use crate::lexer::lexer::lex_from_filepath;
+use crate::tacky::tacky_symbols::PrintableTacky;
+
 pub mod lexer;
 pub mod parser;
 mod generator;
@@ -87,6 +89,11 @@ fn main() -> io::Result<()> {
                 std::process::exit(1);
             } else {
                 println!("Tacky Generation successful!");
+                let tacky_program = tacky_gen_result.unwrap();
+                let tacky_code = tacky_program.print_tacky_code(0);
+                println!("\nGenerated Tacky code:");
+                println!("---------------------------------");
+                println!("{}", tacky_code);
                 std::process::exit(0);
             }
         },

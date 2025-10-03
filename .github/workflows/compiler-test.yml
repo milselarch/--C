@@ -42,7 +42,7 @@ jobs:
       - name: Test full chapters
         run: |
           #!/bin/bash
-          CHAPTERS=(1 2)
+          CHAPTERS=(3 2 1)
           STAGES=("lex" "parse" "codegen" "tacky" "")
           
           for chapter in "${CHAPTERS[@]}"; do

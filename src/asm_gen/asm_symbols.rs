@@ -1,22 +1,24 @@
 use std::collections::HashMap;
 use std::fmt::format;
 use crate::parser::parse::{
-    Expression, ExpressionVariant, Statement, SupportedUnaryOperators
+    Expression, ExpressionVariant, Statement,
+    SupportedBinaryOperators, SupportedUnaryOperators
 };
 use helpers::ToStackAllocated;
+use crate::asm_gen::binary_instruction::{AsmBinaryInstruction, AsmBinaryOperators};
 use crate::asm_gen::helpers;
 use crate::asm_gen::helpers::{
     AppendOnlyHashMap, BufferedHashMap, DiffableHashMap, StackAllocationResult
 };
+use crate::asm_gen::interger_division::AsmIntegerDivision;
+use crate::asm_gen::unary_instruction::AsmUnaryInstruction;
 use crate::parser::parser_helpers::{ParseError, PoppedTokenContext};
-use crate::tacky::tacky_symbols::{
-    tacky_gen_from_filepath, TackyFunction, TackyInstruction, TackyProgram,
-    TackyValue, TackyVariable
-};
+use crate::tacky::tacky_symbols::{tacky_gen_from_filepath, BinaryInstruction, TackyFunction, TackyInstruction, TackyProgram, TackyValue, TackyVariable};
 
 const STACK_VARIABLE_SIZE: u64 = 4; // bytes
-const TAB: &str = "    ";
-const SCRATCH_REGISTER: &str = "%r10d";
+pub const TAB: &str = "    ";
+pub const SCRATCH_REGISTER: &str = "%r10d";
+pub const MUL_SCRATCH_REGISTER: &str = "%r11d";
 const STACK_REGISTER: &str = "%rsp";
 // base of current stack frame
 const BASE_REGISTER: &str = "%rbp";
@@ -197,7 +199,7 @@ impl ToStackAllocated for AsmFunction {
         let new_stack_allocations =
             alloc_buffer.build_changes().to_hash_map();
         let func_alloc_result =
-            StackAllocationResult::with_allocations(new_stack_value, new_stack_allocations);
+            StackAllocationResult::new_with_allocations(new_stack_value, new_stack_allocations);
 
         (new_function, func_alloc_result)
     }
@@ -205,14 +207,18 @@ impl ToStackAllocated for AsmFunction {
 
 #[derive(Clone, Debug)]
 pub enum Register {
-    EAX,
-    R10D
+    EAX, // division quotient register 1 + division result register
+    EDX, // division quotient register 2 + division remainder register
+    R10D, // scratch register
+    R11D,
 }
 impl AsmSymbol for Register {
     fn to_asm_code(self) -> Result<String, AsmGenError> {
         match self {
             Register::EAX => Ok("%eax".to_string()),
             Register::R10D => Ok("%r10d".to_string()),
+            Register::EDX => Ok("%edx".to_string()),
+            Register::R11D => Ok("%r11d".to_string()),
         }
     }
 }
@@ -268,49 +274,12 @@ impl PseudoRegister {
 }
 
 #[derive(Clone, Debug)]
-pub struct AsmUnaryInstruction {
-    operator: SupportedUnaryOperators,
-    destination: AsmOperand,
-}
-impl AsmUnaryInstruction {
-    fn operator_to_asm_string(
-        operator: SupportedUnaryOperators
-    ) -> Result<String, AsmGenError> {
-        match operator {
-            SupportedUnaryOperators::Subtract => Ok("negl".to_string()),
-            SupportedUnaryOperators::BitwiseNot => Ok("notl".to_string()),
-            _ => Err(AsmGenError::UnsupportedInstruction(
-                format!("Unsupported unary operator: {:?}", operator)
-            )),
-        }
-    }
-}
-impl ToStackAllocated for AsmUnaryInstruction {
-    fn to_stack_allocated(
-        &self, stack_value: u64,
-        allocations: &dyn DiffableHashMap<u64, u64>
-    ) -> (Self, StackAllocationResult) {
-        let (operand, alloc_result) =
-            self.destination.to_stack_allocated(stack_value, allocations);
-        let new_instruction = AsmUnaryInstruction {
-            operator: self.operator.clone(),
-            destination: operand,
-        };
-        (new_instruction, alloc_result)
-    }
-}
-impl AsmSymbol for AsmUnaryInstruction {
-    fn to_asm_code(self) -> Result<String, AsmGenError> {
-        let operand_asm = self.destination.to_asm_code()?;
-        let operator_asm = Self::operator_to_asm_string(self.operator)?;
-        Ok(format!("{} {}", operator_asm, operand_asm))
-    }
-}
-
-#[derive(Clone, Debug)]
 pub enum AsmInstruction {
     Mov(MovInstruction),
     Unary(AsmUnaryInstruction),
+    Binary(AsmBinaryInstruction),
+    IntegerDivision(AsmIntegerDivision),
+    SignExtension,
     AllocateStack(StackAllocation),
     Ret,
 }
@@ -323,9 +292,18 @@ impl AsmSymbol for AsmInstruction {
             AsmInstruction::Unary(unary_instruction) => {
                 Ok(unary_instruction.to_asm_code()?)
             },
+            AsmInstruction::Binary(binary_instruction) => {
+                Ok(binary_instruction.to_asm_code()?)
+            }
             AsmInstruction::AllocateStack(stack_allocation) => {
                 Ok(stack_allocation.to_asm_code()?)
             },
+            AsmInstruction::IntegerDivision(int_div_instruction) => {
+                Ok(int_div_instruction.to_asm_code()?)
+            },
+            AsmInstruction::SignExtension => {
+                Ok("cdq".parse().unwrap())
+            }
             AsmInstruction::Ret => {
                 let mut code = String::new();
                 code.push_str(&format!("movq {BASE_REGISTER}, {STACK_REGISTER}\n"));
@@ -333,6 +311,11 @@ impl AsmSymbol for AsmInstruction {
                 code.push_str("ret\n");
                 Ok(code.to_string())
             },
+            _ => {
+                Err(AsmGenError::InvalidInstructionType(
+                    format!("Unsupported AsmInstruction: {:?}", self)
+                ))
+            }
         }
     }
 }
@@ -341,23 +324,6 @@ impl AsmInstruction {
         tacky_instruction: TackyInstruction
     ) -> Vec<Self> {
         match tacky_instruction {
-            TackyInstruction::UnaryInstruction(unary_instruction) => {
-                let src_operand = AsmOperand::from_tacky_value(unary_instruction.src);
-                let dst_operand = AsmOperand::from_tacky_value(
-                    TackyValue::Var(unary_instruction.dst)
-                );
-                let asm_mov_instruction = MovInstruction::new(
-                    src_operand, dst_operand.clone()
-                );
-                let asm_unary_instruction = AsmUnaryInstruction {
-                    operator: unary_instruction.operator,
-                    destination: dst_operand
-                };
-                vec![
-                    AsmInstruction::Mov(asm_mov_instruction),
-                    AsmInstruction::Unary(asm_unary_instruction)
-                ]
-            },
             TackyInstruction::Return(tacky_value) => {
                 let src_operand = match tacky_value {
                     TackyValue::Constant(ast_constant) => {
@@ -378,9 +344,26 @@ impl AsmInstruction {
                     AsmInstruction::Ret
                 ]
             },
-            _ => {
-                panic!("Unsupported TackyInstruction: {:?}", tacky_instruction);
-            }
+            TackyInstruction::UnaryInstruction(unary_instruction) => {
+                let src_operand = AsmOperand::from_tacky_value(unary_instruction.src);
+                let dst_operand = AsmOperand::from_tacky_value(
+                    TackyValue::Var(unary_instruction.dst)
+                );
+                let asm_mov_instruction = MovInstruction::new(
+                    src_operand, dst_operand.clone()
+                );
+                let asm_unary_instruction = AsmUnaryInstruction {
+                    operator: unary_instruction.operator,
+                    destination: dst_operand
+                };
+                vec![
+                    AsmInstruction::Mov(asm_mov_instruction),
+                    AsmInstruction::Unary(asm_unary_instruction)
+                ]
+            },
+            TackyInstruction::BinaryInstruction(binary_instruction) => {
+                AsmBinaryInstruction::unpack_from_tacky(binary_instruction)
+            },
         }
     }
 }
@@ -400,10 +383,29 @@ impl ToStackAllocated for AsmInstruction {
                     unary_instruction.to_stack_allocated(stack_value, allocations);
                 (AsmInstruction::Unary(new_unary_instruction), alloc_result)
             },
-            others => {
-                // For other instructions, we assume they do not require stack allocation
-                (others.clone(), StackAllocationResult::new(stack_value))
+            AsmInstruction::Binary(binary_instruction) => {
+                let (new_binary_instruction, alloc_result) =
+                    binary_instruction.to_stack_allocated(stack_value, allocations);
+                (AsmInstruction::Binary(new_binary_instruction), alloc_result)
+            },
+            AsmInstruction::IntegerDivision(int_div_instruction) => {
+                let (new_int_div_instruction, alloc_result) =
+                    int_div_instruction.to_stack_allocated(stack_value, allocations);
+                (AsmInstruction::IntegerDivision(new_int_div_instruction), alloc_result)
+            },
+            AsmInstruction::AllocateStack(stack_allocation) => {
+                // Stack allocation is not needed, pass through
+                let clone = AsmInstruction::AllocateStack(stack_allocation.clone());
+                (clone, StackAllocationResult::new(stack_value))
             }
+            AsmInstruction::SignExtension => {
+                // Sign extension does not affect stack allocations
+                (self.clone(), StackAllocationResult::new(stack_value))
+            },
+            AsmInstruction::Ret => {
+                // Return does not affect stack allocations
+                (self.clone(), StackAllocationResult::new(stack_value))
+            },
         }
     }
 }
@@ -462,7 +464,7 @@ impl ToStackAllocated for MovInstruction {
         alloc_buffer.apply_changes(dst_alloc_result.new_stack_allocations).unwrap();
 
         let new_instruction = MovInstruction { source, destination };
-        let alloc_result = StackAllocationResult::with_allocations(
+        let alloc_result = StackAllocationResult::new_with_allocations(
             stack_value,
             alloc_buffer.build_changes().to_hash_map()
         );
@@ -485,6 +487,12 @@ impl AsmSymbol for StackAllocation {
 }
 
 #[derive(Clone, Debug)]
+pub struct FromPseudoRegisterResult {
+    pub stack_address: StackAddress,
+    pub newly_allocated: bool,
+}
+
+#[derive(Clone, Debug)]
 pub struct StackAddress {
     pub(crate) offset: u64,
     pub(crate) offset_size: u64,
@@ -501,10 +509,10 @@ impl StackAddress {
     pub fn from_pseudo_register(
         pseudo_register: &PseudoRegister, current_stack_offset: u64,
         offset_size: u64, existing_allocations: &dyn DiffableHashMap<u64, u64>
-    ) -> (Self, bool) {
+    ) -> FromPseudoRegisterResult {
         /*
         Returns the StackAddress ASM Symbol and a boolean indicating
-        whether the pseudo register was already allocated on the stack.
+        whether the pseudo register has been newly allocated to the stack in the current call.
         */
         let existing_allocation = existing_allocations.get(&pseudo_register.id);
         let stack_value = match existing_allocation {
@@ -518,7 +526,11 @@ impl StackAddress {
             pop_contexts: pseudo_register.pop_contexts.clone(),
             tacky_var: pseudo_register.tacky_var.clone(),
         };
-        (stack_address, existing_allocation.is_some())
+        let newly_allocated = existing_allocation.is_none();
+        FromPseudoRegisterResult {
+            stack_address,
+            newly_allocated
+        }
     }
 }
 impl AsmSymbol for StackAddress {
@@ -547,8 +559,8 @@ impl AsmSymbol for AsmOperand {
             AsmOperand::Pseudo(pseudo_register) => {
                 Err(AsmGenError::InvalidInstructionType(
                     format!(
-                        "Pseudo register {} not supported in assembly",
-                        pseudo_register.name
+                        "Pseudo register [{:?}] not supported in assembly",
+                        pseudo_register
                     )
                 ))
             },
@@ -590,24 +602,22 @@ impl ToStackAllocated for AsmOperand {
         */
         match self {
             AsmOperand::Pseudo(pseudo_register) => {
-                let (
-                    stack_address, newly_allocated
-                )  = StackAddress::from_pseudo_register(
+                let conversion = StackAddress::from_pseudo_register(
                     pseudo_register, stack_value, STACK_VARIABLE_SIZE,
                     allocations
                 );
 
                 let mut new_stack_value = stack_value;
                 let mut new_allocations: HashMap<u64, u64> = HashMap::new();
-                if newly_allocated {
+                if conversion.newly_allocated {
                     new_stack_value += STACK_VARIABLE_SIZE;
                     new_allocations.insert(pseudo_register.id, stack_value);
                 }
-                let stack_alloc_result = StackAllocationResult::with_allocations(
+                let stack_alloc_result = StackAllocationResult::new_with_allocations(
                     new_stack_value, new_allocations
                 );
 
-                let new_instruction = AsmOperand::Stack(stack_address);
+                let new_instruction = AsmOperand::Stack(conversion.stack_address);
                 (new_instruction, stack_alloc_result)
             },
             other => {
@@ -665,11 +675,34 @@ impl AsmSymbol for AsmImmediateValue {
     }
 }
 
-
 pub fn asm_gen_from_filepath(
     file_path: &str, verbose: bool
 ) -> Result<AsmProgram, ParseError> {
     let tacky_program = tacky_gen_from_filepath(file_path, verbose)?;
     let asm_program = AsmProgram::from_tacky_program(tacky_program);
     Ok(asm_program)
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::asm_gen::asm_symbols::AsmSymbol;
+
+    #[test]
+    fn test_chapter_3_valid_sub() {
+        let file_path = "./writing-a-c-compiler-tests/tests/chapter_3/valid/sub_neg.c";
+        let asm_program = super::asm_gen_from_filepath(file_path, true).unwrap();
+        let _asm_code = asm_program.to_asm_code().unwrap();
+    }
+    #[test]
+    fn test_chapter_3_valid_precedence() {
+        let file_path = "./writing-a-c-compiler-tests/tests/chapter_3/valid/precedence.c";
+        let asm_program = super::asm_gen_from_filepath(file_path, true).unwrap();
+        let _asm_code = asm_program.to_asm_code().unwrap();
+    }
+    #[test]
+    fn test_chapter_3_sub_neg() {
+        let file_path = "./writing-a-c-compiler-tests/tests/chapter_3/valid/sub_neg.c";
+        let asm_program = super::asm_gen_from_filepath(file_path, true).unwrap();
+        let _asm_code = asm_program.to_asm_code().unwrap();
+    }
 }

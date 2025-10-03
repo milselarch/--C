@@ -1,10 +1,7 @@
 use std::collections::VecDeque;
 use std::num::ParseIntError;
-use std::panic;
-use log::debug;
 use crate::lexer::lexer::{lex_from_filepath, Keywords, Tokens};
 use crate::lexer::tokens::{Operators, Punctuators};
-use crate::parser::parse::ExpressionVariant::UnaryOperation;
 use crate::parser::parser_helpers::{
     ParseError, ParseErrorVariants, PoppedTokenContext, TokenStack
 };
@@ -81,7 +78,7 @@ pub enum SupportedBinaryOperators {
     Subtract,
     Multiply,
     Divide,
-    Modulus,
+    Modulo,
 }
 impl SupportedBinaryOperators {
     pub fn from_operator(op: Operators) -> Option<SupportedBinaryOperators> {
@@ -90,7 +87,7 @@ impl SupportedBinaryOperators {
             Operators::Subtract => Some(SupportedBinaryOperators::Subtract),
             Operators::Multiply => Some(SupportedBinaryOperators::Multiply),
             Operators::Divide => Some(SupportedBinaryOperators::Divide),
-            Operators::Modulus => Some(SupportedBinaryOperators::Modulus),
+            Operators::Modulo => Some(SupportedBinaryOperators::Modulo),
             _ => None,
         }
     }
@@ -100,7 +97,7 @@ impl SupportedBinaryOperators {
             SupportedBinaryOperators::Subtract => 45,
             SupportedBinaryOperators::Multiply => 50,
             SupportedBinaryOperators::Divide => 50,
-            SupportedBinaryOperators::Modulus => 50,
+            SupportedBinaryOperators::Modulo => 50,
         }
     }
     pub fn from_operator_as_result(
@@ -151,38 +148,41 @@ impl Expression {
     fn parse(tokens: &mut TokenStack) -> Result<Expression, ParseError> {
         Self::parse_as_exp(tokens, 0)
     }
+    fn is_next_operator_consumable(
+        token: &Tokens, min_precedence: u8
+    ) -> Option<SupportedBinaryOperators> {
+        /*
+        Check if the next token is a binary operator with sufficient precedence
+        */
+        let binary_operator = match token {
+            Tokens::Operator(op) => {
+                SupportedBinaryOperators::from_operator(*op)
+            },
+            _ => None
+        };
+        if let Some(ref bin_op) = binary_operator {
+            if bin_op.to_precedence() >= min_precedence {
+                return binary_operator;
+            }
+        }
+        None
+    }
     fn parse_as_exp(
         tokens: &mut TokenStack, min_precedence: u8
     ) -> Result<Expression, ParseError> {
-        let is_next_operator_consumable = |
-            token: &Tokens
-        | -> Option<SupportedBinaryOperators> {
-            let binary_operator = match token {
-                Tokens::Operator(op) => {
-                    SupportedBinaryOperators::from_operator(*op)
-                },
-                _ => None
-            };
-            if let Some(ref bin_op) = binary_operator {
-                if bin_op.to_precedence() >= min_precedence {
-                    return binary_operator;
-                }
-            }
-            binary_operator
-        };
-
         tokens.run_with_rollback(|stack_popper| {
             // <exp> ::= <factor> | <exp> <binop> <exp>
-            let mut left_expr = Expression::parse_as_factor(
-                &mut stack_popper.token_stack
-            )?;
-
-            let wrapped_next_code_token = stack_popper.token_stack.peek_front(true)?;
+            let mut left_expr =
+                Expression::parse_as_factor(&mut stack_popper.token_stack)?;
+            let wrapped_next_code_token =
+                stack_popper.token_stack.peek_front(true)?;
             let mut next_code_token = wrapped_next_code_token.token.clone();
 
             while let Some(
                 binary_operator
-            ) = is_next_operator_consumable(&next_code_token) {
+            ) = Self::is_next_operator_consumable(
+                &next_code_token, min_precedence
+            ) {
                 // consume the binary operator
                 stack_popper.pop_front().expect("Failed to pop binary operator");
                 let right_exp = Self::parse_as_exp(
@@ -198,15 +198,18 @@ impl Expression {
                     pop_context: Some(stack_popper.build_pop_context())
                 };
 
-                let wrapped_next_code_token = stack_popper.token_stack.peek_front(true)?;
+                let wrapped_next_code_token =
+                    stack_popper.token_stack.peek_front(true)?;
                 next_code_token = wrapped_next_code_token.token.clone();
             }
 
             Ok(left_expr)
         })
     }
-
-    pub fn parse_as_factor(tokens: &mut TokenStack) -> Result<Expression, ParseError> {
+    fn parse_as_factor(
+        tokens: &mut TokenStack
+    ) -> Result<Expression, ParseError> {
+        // TODO: precedence needs to be forwarded from previous calls
         // <factor> ::= <int> | <unop> <factor> | "(" <exp> ")"
         let wrapped_front_code_token = tokens.peek_front(true)?;
         let front_code_token = wrapped_front_code_token.token.clone();
@@ -277,7 +280,9 @@ impl Expression {
             })
         })
     }
-    fn parse_as_parens_wrapped(tokens: &mut TokenStack) -> Result<Expression, ParseError> {
+    fn parse_as_parens_wrapped(
+        tokens: &mut TokenStack
+    ) -> Result<Expression, ParseError> {
         /*
         Try to parse a parenthesized expression first
         <exp> ::= "(" <exp> ")"
@@ -299,7 +304,7 @@ impl Expression {
                 });
             }
 
-            let sub_expression = Expression::parse(&mut stack_popper.token_stack)?;
+            let sub_expression = Self::parse(&mut stack_popper.token_stack)?;
             const CLOSE_PUNCTUATOR: Tokens = Tokens::Punctuator(Punctuators::CloseParens);
             stack_popper.expect_pop_front(CLOSE_PUNCTUATOR)?;
             let expr_item = ExpressionVariant::ParensWrapped(
@@ -313,7 +318,9 @@ impl Expression {
         })
     }
 
-    fn parse_as_unary_op(tokens: &mut TokenStack) -> Result<Expression, ParseError> {
+    fn parse_as_unary_op(
+        tokens: &mut TokenStack
+    ) -> Result<Expression, ParseError> {
         /*
         Try to parse a unary operation first
         <exp> ::= UnaryOperation(<op>, <exp>)
@@ -516,6 +523,26 @@ mod tests {
         let tokens = lex_result.unwrap();
         let mut token_stack = TokenStack::new_from_vec(tokens);
         let parse_result = parse(&mut token_stack);
+        let program = parse_result.unwrap();
+        assert_eq!(program.function.name.name_to_string(), "main");
+    }
+    #[test]
+    fn test_parse_from_sub_neg() {
+        let file_path = "./writing-a-c-compiler-tests/tests/chapter_3/valid/sub_neg.c";
+        let parse_result = parse_from_filepath(file_path, true);
+        if parse_result.is_err() {
+            panic!("Parser error: {:?}", parse_result.err().unwrap());
+        }
+        let program = parse_result.unwrap();
+        assert_eq!(program.function.name.name_to_string(), "main");
+    }
+    #[test]
+    fn test_parse_from_assoc() {
+        let file_path = "./writing-a-c-compiler-tests/tests/chapter_3/valid/associativity.c";
+        let parse_result = parse_from_filepath(file_path, true);
+        if parse_result.is_err() {
+            panic!("Parser error: {:?}", parse_result.err().unwrap());
+        }
         let program = parse_result.unwrap();
         assert_eq!(program.function.name.name_to_string(), "main");
     }
