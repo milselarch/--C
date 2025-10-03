@@ -487,6 +487,12 @@ impl AsmSymbol for StackAllocation {
 }
 
 #[derive(Clone, Debug)]
+pub struct FromPseudoRegisterResult {
+    pub stack_address: StackAddress,
+    pub newly_allocated: bool,
+}
+
+#[derive(Clone, Debug)]
 pub struct StackAddress {
     pub(crate) offset: u64,
     pub(crate) offset_size: u64,
@@ -503,10 +509,10 @@ impl StackAddress {
     pub fn from_pseudo_register(
         pseudo_register: &PseudoRegister, current_stack_offset: u64,
         offset_size: u64, existing_allocations: &dyn DiffableHashMap<u64, u64>
-    ) -> (Self, bool) {
+    ) -> FromPseudoRegisterResult {
         /*
         Returns the StackAddress ASM Symbol and a boolean indicating
-        whether the pseudo register was already allocated on the stack.
+        whether the pseudo register has been newly allocated to the stack in the current call.
         */
         let existing_allocation = existing_allocations.get(&pseudo_register.id);
         let stack_value = match existing_allocation {
@@ -520,7 +526,11 @@ impl StackAddress {
             pop_contexts: pseudo_register.pop_contexts.clone(),
             tacky_var: pseudo_register.tacky_var.clone(),
         };
-        (stack_address, existing_allocation.is_some())
+        let newly_allocated = existing_allocation.is_none();
+        FromPseudoRegisterResult {
+            stack_address,
+            newly_allocated
+        }
     }
 }
 impl AsmSymbol for StackAddress {
@@ -592,16 +602,14 @@ impl ToStackAllocated for AsmOperand {
         */
         match self {
             AsmOperand::Pseudo(pseudo_register) => {
-                let (
-                    stack_address, newly_allocated
-                )  = StackAddress::from_pseudo_register(
+                let conversion = StackAddress::from_pseudo_register(
                     pseudo_register, stack_value, STACK_VARIABLE_SIZE,
                     allocations
                 );
 
                 let mut new_stack_value = stack_value;
                 let mut new_allocations: HashMap<u64, u64> = HashMap::new();
-                if newly_allocated {
+                if conversion.newly_allocated {
                     new_stack_value += STACK_VARIABLE_SIZE;
                     new_allocations.insert(pseudo_register.id, stack_value);
                 }
@@ -609,7 +617,7 @@ impl ToStackAllocated for AsmOperand {
                     new_stack_value, new_allocations
                 );
 
-                let new_instruction = AsmOperand::Stack(stack_address);
+                let new_instruction = AsmOperand::Stack(conversion.stack_address);
                 (new_instruction, stack_alloc_result)
             },
             other => {
@@ -688,6 +696,12 @@ mod tests {
     #[test]
     fn test_chapter_3_valid_precedence() {
         let file_path = "./writing-a-c-compiler-tests/tests/chapter_3/valid/precedence.c";
+        let asm_program = super::asm_gen_from_filepath(file_path, true).unwrap();
+        let _asm_code = asm_program.to_asm_code().unwrap();
+    }
+    #[test]
+    fn test_chapter_3_sub_neg() {
+        let file_path = "./writing-a-c-compiler-tests/tests/chapter_3/valid/sub_neg.c";
         let asm_program = super::asm_gen_from_filepath(file_path, true).unwrap();
         let _asm_code = asm_program.to_asm_code().unwrap();
     }

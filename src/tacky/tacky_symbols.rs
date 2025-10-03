@@ -175,6 +175,8 @@ impl TackyInstruction {
 
                 let var_counter = inner_unroll_res.next_free_var_id;
                 let new_var = TackyVariable::new(var_counter);
+                let var_counter = var_counter + 1;
+
                 let new_unary_instruction = UnaryInstruction {
                     operator,
                     src: inner_unroll_res.value,
@@ -189,7 +191,7 @@ impl TackyInstruction {
                 UnrollResult::new(
                     instructions,
                     TackyValue::Var(new_var),
-                    var_counter + 1
+                    var_counter
                 )
             }
             ExpressionVariant::BinaryOperation(operator, left, right) => {
@@ -201,9 +203,11 @@ impl TackyInstruction {
                 let var_counter = left_unroll.next_free_var_id;
                 let right_unroll =
                     Self::unroll_expression(right_expr_item, var_counter);
-                let var_counter = left_unroll.next_free_var_id;
+                let var_counter = right_unroll.next_free_var_id;
 
                 let new_var = TackyVariable::new(var_counter);
+                let var_counter = var_counter + 1;
+
                 let new_binary_instruction = BinaryInstruction {
                     operator,
                     left: left_unroll.value,
@@ -221,7 +225,7 @@ impl TackyInstruction {
                 UnrollResult::new(
                     instructions,
                     TackyValue::Var(new_var),
-                    var_counter + 1
+                    var_counter
                 )
             }
             ExpressionVariant::ParensWrapped(sub_expr) => {
@@ -285,7 +289,8 @@ impl PrintableTacky for TackyFunction {
     fn print_tacky_code(&self, depth: u64) -> String {
         let mut result = String::new();
         let indent = TAB.repeat(depth as usize);
-        result.push_str(&format!("{}TackyFunction: {}\n", indent, self.name_to_string()));
+        result.push_str(&format!("{}TackyFunction:\n", indent));
+        result.push_str(&format!("{}{TAB}Name: {}\n", indent, self.name_to_string()));
         result.push_str(&format!("{}{TAB}Instructions:\n", indent));
         for instruction in &self.instructions {
             result.push_str(&instruction.print_tacky_code(depth + 2));
