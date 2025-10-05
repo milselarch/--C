@@ -19,6 +19,10 @@ pub enum ALUOperations {
 pub enum Registers {
     InputA,
     InputB,
+    // same purpose as EDI / ESI ... registers in System V ABI
+    FunctionInput,
+    StackPointer,
+    BasePointer,
     Scratch(u8),
     Output,
     Return
