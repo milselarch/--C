@@ -1,1 +1,1 @@
-pub mod potato_vm;
+pub mod potato_cpu;
