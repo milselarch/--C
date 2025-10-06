@@ -25,7 +25,7 @@ pub enum Registers {
     BasePointer,
     Scratch(u8),
     Output,
-    Return
+    FunctionReturn
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -81,7 +81,7 @@ impl PotatoCPU {
             return StepResult {
                 halted: true,
                 time_steps: self.time_steps,
-                return_value: self.registers.get(&Registers::Return).cloned()
+                return_value: self.registers.get(&Registers::FunctionReturn).cloned()
             };
         }
 
@@ -156,7 +156,7 @@ impl PotatoCPU {
         StepResult {
             halted: self.halted,
             time_steps: self.time_steps,
-            return_value: self.registers.get(&Registers::Return).cloned()
+            return_value: self.registers.get(&Registers::FunctionReturn).cloned()
         }
     }
 }
