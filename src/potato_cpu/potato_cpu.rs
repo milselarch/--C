@@ -59,6 +59,9 @@ pub struct PotatoSpec {
     stack_width: u16
 }
 
+/*
+Stack width is finite but registers are infinite size
+*/
 pub struct PotatoCPU {
     pub spec: PotatoSpec,
     pub stack: Vec<BitAllocation>,
@@ -121,19 +124,16 @@ impl PotatoCPU {
                 let value = self.registers.get(&reg).cloned().unwrap_or(
                     BitAllocation::new_zero()
                 );
-                if index >= self.stack.len() {
-                    self.stack.resize(index + 1, 0);
-                }
                 self.assign_to_stack(index, value)
                 // self.stack[index] = value.to_u32().unwrap_or(0);
             },
             PotatoCodes::MovStackToRegister(index, reg) => {
-                let value = if index < self.stack.len() {
-                    BigInt::from(self.stack[index])
+                let stack_value = if index < self.stack.len() {
+                    self.stack[index].clone()
                 } else {
-                    BigInt::from(0)
+                    self.spawn_new_stack_value()
                 };
-                self.registers.insert(reg.clone(), value);
+                self.registers.insert(reg.clone(), stack_value);
             },
             PotatoCodes::Operate(op) => {
                 let a = self.registers.get(&Registers::InputA).cloned().unwrap_or(BigInt::from(0));

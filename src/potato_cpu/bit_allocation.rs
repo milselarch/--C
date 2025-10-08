@@ -23,6 +23,12 @@ impl BitAllocation {
     pub fn resize(&mut self, new_size: usize) {
         self.bits.resize(new_size, false);
     }
+    pub fn auto_shrink(&mut self) {
+        // remove trailing zeros
+        while self.bits.len() > 1 && !self.bits.last().unwrap() {
+            self.bits.pop();
+        }
+    }
     pub fn to_big_num(&self) -> BigUint {
         let bytes: Vec<u8> = self.bits.chunks(8).map(|chunk| {
             let mut byte = 0u8;
