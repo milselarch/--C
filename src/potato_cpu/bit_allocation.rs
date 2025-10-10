@@ -37,10 +37,8 @@ impl BitAllocation for FixedBitAllocation {
     fn to_big_num(&self) -> BigUint {
         self.bit_allocation.to_big_num()
     }
-    fn apply_big_num(
-        &mut self, num: &BigUint
-    ) {
-        self.bit_allocation.apply_big_num(num, false);
+    fn apply_big_num(&mut self, num: &BigUint) {
+        self.bit_allocation.apply_big_num(num);
     }
     fn copy_from(&mut self, other: &FixedBitAllocation) {
         self.bit_allocation.copy_from(&other.bit_allocation);
@@ -62,9 +60,6 @@ impl GrowableBitAllocation {
     }
     pub fn get_length(&self) -> usize {
         self.bits.len()
-    }
-    pub fn get_bits(&self) -> &Vec<bool> {
-        &self.bits
     }
     pub fn apply_twos_complement(&mut self) {
         // flip all bits
@@ -100,7 +95,20 @@ impl GrowableBitAllocation {
             self.bits.pop();
         }
     }
-    pub fn to_big_num(&self) -> BigUint {
+    pub fn to_fixed_allocation(&self) -> FixedBitAllocation {
+        FixedBitAllocation {
+            bit_allocation: self.clone()
+        }
+    }
+}
+impl BitAllocation for GrowableBitAllocation {
+    fn get_length(&self) -> usize {
+        self.bits.len()
+    }
+    fn get_bits(&self) -> &Vec<bool> {
+        &self.bits
+    }
+    fn to_big_num(&self) -> BigUint {
         let bytes: Vec<u8> = self.bits.chunks(8).map(|chunk| {
             let mut byte = 0u8;
             for (i, &bit) in chunk.iter().enumerate() {
@@ -110,14 +118,11 @@ impl GrowableBitAllocation {
         }).collect();
         BigUint::from_bytes_le(&*bytes)
     }
-    pub fn apply_big_num(
-        &mut self, num: &BigUint, auto_resize: bool
-    ) {
+    fn apply_big_num(&mut self, num: &BigUint) {
         let bytes = num.to_bytes_le();
-        if auto_resize {
-            self.resize(bytes.len() * 8);
-        }
+        self.resize(bytes.len() * 8);
         self.bits.clear();
+
         for (byte_index, byte) in bytes.iter().enumerate() {
             for i in 0..8 {
                 let bit_value = byte & (1 << i);
@@ -132,11 +137,9 @@ impl GrowableBitAllocation {
             }
         }
 
-        if auto_resize {
-            self.auto_shrink();
-        }
+        self.auto_shrink();
     }
-    pub fn copy_from(&mut self, other: &GrowableBitAllocation) {
+    fn copy_from(&mut self, other: &GrowableBitAllocation) {
         for i in 0..self.get_length() {
             let other_bit_value = if i < other.get_length() {
                 other.bits[i]

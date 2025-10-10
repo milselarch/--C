@@ -5,7 +5,7 @@ use std::cmp::PartialEq;
 use std::collections::HashMap;
 use num_bigint::{BigInt, BigUint};
 use num_traits::{ToPrimitive, Zero};
-use crate::potato_cpu::bit_allocation::{GrowableBitAllocation, FixedBitAllocation};
+use crate::potato_cpu::bit_allocation::{GrowableBitAllocation, FixedBitAllocation, BitAllocation};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ALUOperations {
@@ -30,9 +30,35 @@ pub enum Registers {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MovStackToRegister {
+    stack_address: usize,
+    num_stack_addresses: usize,
+    register: Registers
+}
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct StrideMovRegisterToStack {
+    register: Registers,
+    start_stack_address: usize,
+    stride: usize
+}
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct StrideMovStackToRegister {
+    start_stack_address: usize,
+    stride: usize,
+    num_stack_addresses: usize,
+    register: Registers
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PotatoCodes {
+    // register, stack address
     MovRegisterToStack(Registers, usize),
-    MovStackToRegister(usize, Registers),
+    // stack address, num stack addresses to copy, register
+    MovStackToRegister(MovStackToRegister),
+
+    StrideMovRegisterToStack(StrideMovRegisterToStack),
+    StrideMovStackToRegister(StrideMovStackToRegister),
+
     Operate(ALUOperations),
     DataValue(GrowableBitAllocation),
     // move instruction data value to register
@@ -121,7 +147,7 @@ impl PotatoCPU {
                 );
                 
                 let mut stack_value = self.spawn_new_stack_value();
-                stack_value.copy_from(value);
+                stack_value.copy_from(&value.to_fixed_allocation());
                 self.assign_to_stack(index, value)
                 // self.stack[index] = value.to_u32().unwrap_or(0);
             },
