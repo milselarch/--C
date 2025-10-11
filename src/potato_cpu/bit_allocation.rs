@@ -1,3 +1,5 @@
+use std::ops::{Add, Sub};
+use enum_iterator::all;
 use num_bigint::BigUint;
 
 pub trait BitAllocation {
@@ -62,6 +64,11 @@ impl GrowableBitAllocation {
     }
     pub fn new_zero() -> Self {
         Self::new(1)
+    }
+    pub(crate) fn from_big_num(num: &BigUint) -> Self {
+        let mut allocation = Self::new(0);
+        allocation.apply_big_num(num);
+        allocation
     }
     pub fn get_length(&self) -> usize {
         self.bits.len()
@@ -178,5 +185,27 @@ impl BitAllocation for GrowableBitAllocation {
             };
             self.bits[i] = other_bit_value;
         }
+    }
+}
+impl Add for GrowableBitAllocation {
+    type Output = GrowableBitAllocation;
+
+    fn add(self, other: GrowableBitAllocation) -> GrowableBitAllocation {
+        let sum = self.to_big_num() + other.to_big_num();
+        GrowableBitAllocation::from_big_num(&sum)
+    }
+}
+impl Sub for GrowableBitAllocation {
+    type Output = GrowableBitAllocation;
+
+    fn sub(self, other: GrowableBitAllocation) -> GrowableBitAllocation {
+        let self_clone = self.clone();
+        let mut other_clone = other.clone();
+        other_clone.apply_twos_complement();
+
+
+        let other_num = other.to_big_num();
+
+        GrowableBitAllocation::from_big_num(&difference)
     }
 }

@@ -1,23 +1,56 @@
 extern crate num_bigint;
 extern crate num_traits;
 
+use crate::potato_cpu::bit_allocation::{
+    BitAllocation, FixedBitAllocation, GrowableBitAllocation
+};
+use arbitrary_int::{u4, UInt};
+use num_bigint::BigInt;
+use num_traits::Zero;
 use std::cmp::PartialEq;
 use std::collections::HashMap;
-use num_bigint::{BigInt, BigUint};
-use num_traits::{ToPrimitive, Zero};
-use crate::potato_cpu::bit_allocation::{GrowableBitAllocation, FixedBitAllocation, BitAllocation};
 
+const AND_OP: UInt<u8, 4> = u4::new(0b1000);
+const OR_OP: UInt<u8, 4> = u4::new(0b1110);
+/*
+If an operation has a worse time complexity when implemented
+using assembly instead of directly implementing it in the cellular automaton,
+then it should be supported natively as an ALU operation.
+*/
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ALUOperations {
-    WriteThrough,
+    // O(n), assembly is O(n^2) cause n reapplications of carry
     Add,
-    Subtract,
-    BitwiseAnd,
-    BitwiseOr,
-    BitwiseNot,
+    /*
+    Perhaps the instruction itself should just encode a mapping
+    of all (bit_a, bit_b) -> result_bit for all input combinations
+    */
+    BitwiseNOperation(u4),
+    // TODO: support some sort of bitwise folding operation?
+    // O(n*log(n)), assembly implementation would be O(n^2)
     ShiftLeft,
     ShiftRight,
-    IsTrue
+    ShiftCircularLeft,
+    CompareGreaterThan,
+    /*
+    Return the length of the input register data in bits
+    O(n) is CA, assembly is O(n^2) (shift left until zero)
+    Also doubles as a way to get log2(input) for input > 0
+    */
+    GetLength,
+    IsTrue,
+    /*
+    - twos complement is just flipping all bits and adding 1
+      so O(n) + O(n) = O(n)
+    - subtract is just a + b's twos complement
+      also O(n) + O(n) = O(n)
+    - I think circular right is not needed since
+      circular left by k is the same as circular right by (n - k)
+    - use assembly to implement times, divide, modulo lol
+      O(n^2) in both native CA and assembly
+    - write-through is just input | 0
+    - ~input is just input NAND input
+    */
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
@@ -59,6 +92,7 @@ pub enum PotatoCodes {
     MovRegisterToStack(Registers, usize),
     // stack address, num stack addresses to copy, register
     MovStackToRegister(MovStackToRegister),
+    CopyRegisterToRegister(Registers, Registers),
 
     StrideMovRegisterToStack(StrideMovRegisterToStack),
     StrideMovStackToRegister(StrideMovStackToRegister),
@@ -68,6 +102,7 @@ pub enum PotatoCodes {
     // move instruction data value to register
     MovDataValueToRegister(usize, Registers),
     // resize value in output register to fit in stack
+
     ResizeOutput(usize)
 }
 
@@ -234,5 +269,22 @@ impl PotatoCPU {
             time_steps: self.time_steps,
             return_value: self.registers.get(&Registers::FunctionReturn).cloned()
         }
+    }
+
+    pub fn add_inputs(
+        input_a: &GrowableBitAllocation, input_b: &GrowableBitAllocation
+    ) -> GrowableBitAllocation {
+        let a = input_a.to_big_num();
+        let b = input_b.to_big_num();
+        let result = a + b;
+        GrowableBitAllocation::from_big_num(&result)
+    }
+    pub fn subtract_inputs(
+        input_a: &GrowableBitAllocation, input_b: &GrowableBitAllocation
+    ) -> GrowableBitAllocation {
+        let a = input_a.to_big_num();
+        let b = input_b.to_big_num();
+        let result = a - b;
+        GrowableBitAllocation::from_big_num(&result)
     }
 }

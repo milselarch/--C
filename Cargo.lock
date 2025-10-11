@@ -12,6 +12,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "arbitrary-int"
+version = "2.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c858caffa49edfc4ecc45a4bec37abd3e88041a2903816f10f990b7b41abc281"
+
+[[package]]
 name = "autocfg"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -21,6 +27,7 @@ checksum = "c08606f8c3cbf4ce6ec8e28fb0014a2c086708fe954eaa885384a6165172e7e8"
 name = "ca-compiler"
 version = "0.1.0"
 dependencies = [
+ "arbitrary-int",
  "enum-iterator",
  "indent",
  "log",
