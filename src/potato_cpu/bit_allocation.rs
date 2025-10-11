@@ -20,6 +20,11 @@ impl FixedBitAllocation {
             bit_allocation: GrowableBitAllocation::new(size)
         }
     }
+    pub fn new_from(bits: Vec<bool>) -> Self {
+        FixedBitAllocation {
+            bit_allocation: GrowableBitAllocation { bits }
+        }
+    }
     pub fn new_zero(size: usize) -> Self {
         Self::new(size)
     }
@@ -99,6 +104,31 @@ impl GrowableBitAllocation {
         FixedBitAllocation {
             bit_allocation: self.clone()
         }
+    }
+    pub fn split(&self, split_size: usize) -> Vec<FixedBitAllocation> {
+        /*
+        Chops up the allocation into smaller fixed-size allocations
+        of length split_size. If the last chunk is smaller than split_size,
+        it is padded with the most significant bit (sign bit) (little-endian)
+        to reach the desired size.
+        */
+        let mut result = Vec::new();
+        let mut index = 0;
+
+        while index < self.bits.len() {
+            let end_index = usize::min(index + split_size, self.bits.len());
+            let mut chunk_bits = self.bits[index..end_index].to_vec();
+            let msb = *chunk_bits.last().unwrap();
+            chunk_bits.resize(split_size, msb);
+
+            let chunk = FixedBitAllocation::new_from(chunk_bits);
+            result.push(chunk);
+            index += split_size;
+        }
+        result
+    }
+    pub fn append(&mut self, other: &FixedBitAllocation) {
+        self.bits.extend_from_slice(other.get_bits());
     }
 }
 impl BitAllocation for GrowableBitAllocation {

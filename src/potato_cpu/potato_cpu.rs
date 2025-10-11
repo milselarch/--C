@@ -9,11 +9,15 @@ use crate::potato_cpu::bit_allocation::{GrowableBitAllocation, FixedBitAllocatio
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ALUOperations {
+    WriteThrough,
     Add,
     Subtract,
-    Multiply,
-    Divide,
-    Modulo,
+    BitwiseAnd,
+    BitwiseOr,
+    BitwiseNot,
+    ShiftLeft,
+    ShiftRight,
+    IsTrue
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
@@ -119,7 +123,36 @@ impl PotatoCPU {
             let blank_stack_value = self.spawn_new_stack_value();
             self.stack.resize(index + 1, blank_stack_value);
         }
-        self.stack[index] = value;
+        self.stack[index].copy_from(&value);
+    }
+    pub fn read_from_stack(&self, index: usize) -> FixedBitAllocation {
+        if index < self.stack.len() {
+            self.stack[index].clone()
+        } else {
+            self.spawn_new_stack_value()
+        }
+    }
+    fn validate_register(&self, reg: &Registers) {
+        if let Registers::Scratch(scratch_register_no) = &reg {
+            if *scratch_register_no >= self.spec.num_scratch_registers {
+                panic!(
+                    "Scratch register number {} out of bounds (max {})",
+                   scratch_register_no, self.spec.num_scratch_registers - 1
+                );
+            }
+        }
+    }
+    pub fn load_register(&mut self, reg: Registers) -> &GrowableBitAllocation {
+        self.validate_register(&reg);
+        self.registers.entry(reg).or_insert(
+            GrowableBitAllocation::new(0)
+        )
+    }
+    pub fn load_register_mut(&mut self, reg: Registers) -> &mut GrowableBitAllocation {
+        self.validate_register(&reg);
+        self.registers.entry(reg).or_insert(
+            GrowableBitAllocation::new(0)
+        )
     }
 
     pub fn step(&mut self) -> StepResult {
@@ -140,26 +173,18 @@ impl PotatoCPU {
         let instruction = instructions[self.program_counter];
         match instruction {
             PotatoCodes::MovRegisterToStack(reg, index) => {
-                // TODO: add instruction to copy register to multiple stack addresses
-                //  (so that the whole register value can be copied)
-                let value = self.registers.get(&reg).cloned().unwrap_or(
-                    GrowableBitAllocation::new_zero()
-                );
-                
-                let mut stack_value = self.spawn_new_stack_value();
-                stack_value.copy_from(&value.to_fixed_allocation());
-                self.assign_to_stack(index, value)
-                // self.stack[index] = value.to_u32().unwrap_or(0);
+                let register_value = self.load_register(reg);
+                let chunks = register_value.split(self.spec.stack_width as usize);
+                for (i, chunk) in chunks.into_iter().enumerate() {
+                    self.assign_to_stack(index + i, chunk);
+                }
             },
-            PotatoCodes::MovStackToRegister(index, reg) => {
-                let stack_value = if index < self.stack.len() {
-                    self.stack[index].clone()
-                } else {
-                    self.spawn_new_stack_value()
-                };
-                let mut stack_value = stack_value.to_bit_allocation();
-                stack_value.auto_shrink();
-                self.registers.insert(reg.clone(), stack_value);
+            PotatoCodes::MovStackToRegister(params) => {
+                let register = self.load_register_mut(params.register);
+                for i in 0..params.num_stack_addresses {
+                    let stack_value = self.read_from_stack(params.stack_address + i);
+                    register.append(&stack_value);
+                }
             },
             PotatoCodes::Operate(op) => {
                 let a = self.registers.get(&Registers::InputA).cloned().unwrap_or(BigInt::from(0));
