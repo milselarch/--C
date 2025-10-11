@@ -21,15 +21,15 @@ then it should be supported natively as an ALU operation.
 pub enum ALUOperations {
     // O(n), assembly is O(n^2) cause n reapplications of carry
     Add,
+    ReverseBits,
     /*
-    Perhaps the instruction itself should just encode a mapping
+    Perhaps the instruction itself could just encode a mapping
     of all (bit_a, bit_b) -> result_bit for all input combinations
+    within the CA
     */
     BitwiseNOperation(u4),
-    // TODO: support some sort of bitwise folding operation?
     // O(n*log(n)), assembly implementation would be O(n^2)
     ShiftLeft,
-    ShiftRight,
     ShiftCircularLeft,
     CompareGreaterThan,
     /*
@@ -38,7 +38,6 @@ pub enum ALUOperations {
     Also doubles as a way to get log2(input) for input > 0
     */
     GetLength,
-    IsTrue,
     /*
     - twos complement is just flipping all bits and adding 1
       so O(n) + O(n) = O(n)
@@ -50,6 +49,7 @@ pub enum ALUOperations {
       O(n^2) in both native CA and assembly
     - write-through is just input | 0
     - ~input is just input NAND input
+    - truthiness is just checking if input > 0
     */
 }
 
