@@ -6,9 +6,9 @@ use crate::potato_cpu::bit_allocation::{
 };
 use arbitrary_int::{u4, UInt};
 use num_bigint::BigInt;
-use num_traits::Zero;
 use std::cmp::PartialEq;
 use std::collections::HashMap;
+use std::ops::Add;
 
 const AND_OP: UInt<u8, 4> = u4::new(0b1000);
 const OR_OP: UInt<u8, 4> = u4::new(0b1110);
@@ -38,6 +38,10 @@ pub enum ALUOperations {
     Also doubles as a way to get log2(input) for input > 0
     */
     GetLength,
+    // shrink / grow A to size B
+    Resize,
+    // grow A to be a multiple of size B
+    ResizeModulo
     /*
     - twos complement is just flipping all bits and adding 1
       so O(n) + O(n) = O(n)
@@ -222,26 +226,19 @@ impl PotatoCPU {
                 }
             },
             PotatoCodes::Operate(op) => {
-                let a = self.registers.get(&Registers::InputA).cloned().unwrap_or(BigInt::from(0));
-                let b = self.registers.get(&Registers::InputB).cloned().unwrap_or(BigInt::from(0));
-                
+                let a = self.load_register(Registers::InputA);
+                let b = self.load_register(Registers::InputB);
+                let a_size = a.get_length();
+                let b_size = b.get_length();
+                let max_size = std::cmp::max(a_size, b_size);
+
                 let result = match op {
                     ALUOperations::Add => a + b,
-                    ALUOperations::Subtract => a - b,
-                    ALUOperations::Multiply => a * b,
-                    ALUOperations::Divide => {
-                        if b.is_zero() {
-                            BigInt::from(0)
-                        } else {
-                            a / b
-                        }
+                    ALUOperations::ReverseBits => {
+                        *a.clone().reverse()
                     },
-                    ALUOperations::Modulo => {
-                        if b.is_zero() {
-                            BigInt::from(0)
-                        } else {
-                            a % b
-                        }
+                    ALUOperations::BitwiseNOperation(op_code) => {
+                        todo!()
                     },
                 };
                 self.registers.insert(Registers::Output, result);

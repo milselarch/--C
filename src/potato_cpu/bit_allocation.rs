@@ -1,4 +1,5 @@
 use std::ops::{Add, Sub};
+use arbitrary_int::u4;
 use enum_iterator::all;
 use num_bigint::BigUint;
 
@@ -58,9 +59,10 @@ pub struct GrowableBitAllocation {
 }
 impl GrowableBitAllocation {
     pub fn new(size: usize) -> Self {
-        GrowableBitAllocation {
-            bits: vec![false; size]
-        }
+        Self::new_from(vec![false; size])
+    }
+    pub fn new_from(bits: Vec<bool>) -> Self {
+        GrowableBitAllocation { bits }
     }
     pub fn new_zero() -> Self {
         Self::new(1)
@@ -73,7 +75,7 @@ impl GrowableBitAllocation {
     pub fn get_length(&self) -> usize {
         self.bits.len()
     }
-    pub fn apply_twos_complement(&mut self) {
+    pub fn apply_twos_complement(&mut self) -> &mut Self {
         // flip all bits
         for bit in self.bits.iter_mut() {
             *bit = !*bit;
@@ -92,20 +94,29 @@ impl GrowableBitAllocation {
                 break;
             }
         }
+        self
+    }
+    pub fn apply_boolean_operation(
+        &mut self, other: &GrowableBitAllocation, op: u4
+    ) -> &mut Self {
+        todo!()
     }
 
-    pub fn resize(&mut self, new_size: usize) {
+    pub fn resize(&mut self, new_size: usize) -> &mut Self {
         self.bits.resize(new_size, false);
+        self
     }
-    pub fn signed_resize(&mut self, new_size: usize) {
+    pub fn signed_resize(&mut self, new_size: usize) -> &mut Self {
         let sign_bit = *self.bits.last().unwrap();
         self.bits.resize(new_size, sign_bit);
+        self
     }
-    pub fn auto_shrink(&mut self) {
+    pub fn auto_shrink(&mut self) -> &mut Self {
         // remove trailing zeros
         while self.bits.len() > 1 && !self.bits.last().unwrap() {
             self.bits.pop();
         }
+        self
     }
     pub fn to_fixed_allocation(&self) -> FixedBitAllocation {
         FixedBitAllocation {
@@ -136,6 +147,10 @@ impl GrowableBitAllocation {
     }
     pub fn append(&mut self, other: &FixedBitAllocation) {
         self.bits.extend_from_slice(other.get_bits());
+    }
+    pub fn reverse(&mut self) -> &mut Self {
+        self.bits.reverse();
+        self
     }
 }
 impl BitAllocation for GrowableBitAllocation {
@@ -195,17 +210,11 @@ impl Add for GrowableBitAllocation {
         GrowableBitAllocation::from_big_num(&sum)
     }
 }
-impl Sub for GrowableBitAllocation {
+impl Add for &GrowableBitAllocation {
     type Output = GrowableBitAllocation;
 
-    fn sub(self, other: GrowableBitAllocation) -> GrowableBitAllocation {
-        let self_clone = self.clone();
-        let mut other_clone = other.clone();
-        other_clone.apply_twos_complement();
-
-
-        let other_num = other.to_big_num();
-
-        GrowableBitAllocation::from_big_num(&difference)
+    fn add(self, other: &GrowableBitAllocation) -> GrowableBitAllocation {
+        let sum = self.to_big_num() + other.to_big_num();
+        GrowableBitAllocation::from_big_num(&sum)
     }
 }
