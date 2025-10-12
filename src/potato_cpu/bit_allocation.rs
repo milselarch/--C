@@ -1,4 +1,4 @@
-use std::ops::{Add, Sub};
+use std::ops::{Add, Shl, Sub};
 use arbitrary_int::u4;
 use enum_iterator::all;
 use num_bigint::BigUint;
@@ -96,10 +96,47 @@ impl GrowableBitAllocation {
         }
         self
     }
+
+    pub const fn translate_bool_op(&self, a: bool, b: bool, bool_operation: u4) -> bool {
+        match bool_operation.value() {
+            0 => false,             // 0000
+            1 => a & b,             // 0001
+            2 => a & !b,            // 0010
+            3 => a,                 // 0011
+            4 => !a & b,            // 0100
+            5 => b,                 // 0101
+            6 => a ^ b,             // 0110
+            7 => a | b,             // 0111
+            8 => !(a | b),          // 1000
+            9 => !(a ^ b),          // 1001
+            10 => !b,               // 1010
+            11 => a | !b,           // 1011
+            12 => !a,               // 1100
+            13 => !a | b,           // 1101
+            14 => !(a & b),         // 1110
+            15 => true,             // 1111
+            _ => unreachable!(),    // u4 can only be in [0, 15]
+        }
+    }
+
     pub fn apply_boolean_operation(
-        &mut self, other: &GrowableBitAllocation, op: u4
-    ) -> &mut Self {
-        todo!()
+        &self, other: &GrowableBitAllocation, op: u4
+    ) -> Self {
+        let max_length = usize::max(self.get_length(), other.get_length());
+        let mut a = self.clone();
+        let mut b = other.clone();
+        a.resize(max_length);
+        b.resize(max_length);
+
+        let mut result_bits = Vec::with_capacity(max_length);
+        for i in 0..max_length {
+            let a_bit = a.bits[i];
+            let b_bit = b.bits[i];
+            let result_bit = self.translate_bool_op(a_bit, b_bit, op);
+            result_bits.push(result_bit);
+        }
+
+        GrowableBitAllocation::new_from(result_bits)
     }
 
     pub fn resize(&mut self, new_size: usize) -> &mut Self {
@@ -206,6 +243,7 @@ impl Add for GrowableBitAllocation {
     type Output = GrowableBitAllocation;
 
     fn add(self, other: GrowableBitAllocation) -> GrowableBitAllocation {
+        // TODO: in retrospect was bignum actually necessary
         let sum = self.to_big_num() + other.to_big_num();
         GrowableBitAllocation::from_big_num(&sum)
     }
@@ -216,5 +254,12 @@ impl Add for &GrowableBitAllocation {
     fn add(self, other: &GrowableBitAllocation) -> GrowableBitAllocation {
         let sum = self.to_big_num() + other.to_big_num();
         GrowableBitAllocation::from_big_num(&sum)
+    }
+}
+impl Shl for &GrowableBitAllocation {
+    type Output = GrowableBitAllocation;
+
+    fn shl(self, shift: &GrowableBitAllocation) -> GrowableBitAllocation {
+        todo!()
     }
 }

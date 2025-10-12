@@ -238,8 +238,8 @@ impl PotatoCPU {
                         *a.clone().reverse()
                     },
                     ALUOperations::BitwiseNOperation(op_code) => {
-                        todo!()
-                    },
+                        a.apply_boolean_operation(b, op_code)
+                    }
                 };
                 self.registers.insert(Registers::Output, result);
             },
