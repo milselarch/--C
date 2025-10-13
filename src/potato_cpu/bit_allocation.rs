@@ -1,7 +1,8 @@
-use std::ops::{Add, Shl, Sub};
+use std::ops::{Add, Shl, Shr, Sub};
 use arbitrary_int::u4;
 use enum_iterator::all;
 use num_bigint::BigUint;
+use num_traits::ToPrimitive;
 
 pub trait BitAllocation {
     fn get_length(&self) -> usize;
@@ -72,6 +73,13 @@ impl GrowableBitAllocation {
         allocation.apply_big_num(num);
         allocation
     }
+    pub fn new_from_bool(value: bool) -> Self {
+        GrowableBitAllocation::new_from(vec![value])
+    }
+    pub fn new_from_num(num: usize) -> Self {
+        let big_num = BigUint::from(num);
+        GrowableBitAllocation::from_big_num(&big_num)
+    }
     pub fn get_length(&self) -> usize {
         self.bits.len()
     }
@@ -137,6 +145,17 @@ impl GrowableBitAllocation {
         }
 
         GrowableBitAllocation::new_from(result_bits)
+    }
+    pub fn circular_shift_left(
+        &mut self, shift_amount: &GrowableBitAllocation
+    ) -> &mut Self {
+        let len = self.bits.len();
+        if len == 0 { return self; }
+
+        let usize_shift_amount = shift_amount.
+        let shift = shift_amount % len;
+        self.bits.rotate_left(shift);
+        self
     }
 
     pub fn resize(&mut self, new_size: usize) -> &mut Self {
@@ -260,6 +279,27 @@ impl Shl for &GrowableBitAllocation {
     type Output = GrowableBitAllocation;
 
     fn shl(self, shift: &GrowableBitAllocation) -> GrowableBitAllocation {
-        todo!()
+        let shift_amount_opt = shift.to_big_num().to_usize();
+        let shift_amount = match shift_amount_opt {
+            Some(val) => val,
+            None => return GrowableBitAllocation::new_zero(),
+        };
+        let bits = self.bits.clone();
+        let result_bits = &bits[shift_amount..];
+        GrowableBitAllocation::new_from(result_bits.to_vec())
+    }
+}
+impl Shr for &GrowableBitAllocation {
+    type Output = GrowableBitAllocation;
+
+    fn shr(self, shift: &GrowableBitAllocation) -> GrowableBitAllocation {
+        let shift_amount_opt = shift.to_big_num().to_usize();
+        let shift_amount = match shift_amount_opt {
+            Some(val) => val,
+            None => return GrowableBitAllocation::new_zero(),
+        };
+        let mut result_bits = vec![false; shift_amount];
+        result_bits.extend_from_slice(&self.bits);
+        GrowableBitAllocation::new_from(result_bits)
     }
 }

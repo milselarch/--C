@@ -6,7 +6,7 @@ use crate::potato_cpu::bit_allocation::{
 };
 use arbitrary_int::{u4, UInt};
 use num_bigint::BigInt;
-use std::cmp::PartialEq;
+use std::cmp::{Ordering, PartialEq, PartialOrd};
 use std::collections::HashMap;
 use std::ops::Add;
 
@@ -28,9 +28,10 @@ pub enum ALUOperations {
     within the CA
     */
     BitwiseNOperation(u4),
-    // O(n*log(n)), assembly implementation would be O(n^2)
+    // O(n), assembly implementation would be O(n^2)
     ShiftLeft,
-    ShiftCircularLeft,
+    // O(n), assembly implementation would be O(n^2)
+    ShiftRight,
     CompareGreaterThan,
     /*
     Return the length of the input register data in bits
@@ -105,9 +106,6 @@ pub enum PotatoCodes {
     DataValue(GrowableBitAllocation),
     // move instruction data value to register
     MovDataValueToRegister(usize, Registers),
-    // resize value in output register to fit in stack
-
-    ResizeOutput(usize)
 }
 
 #[derive(Clone, Debug)]
@@ -133,6 +131,12 @@ pub struct PotatoCPU {
     pub program_counter: usize,
     pub registers: HashMap<Registers, GrowableBitAllocation>,
     pub halted: bool
+}
+
+impl PartialOrd for GrowableBitAllocation {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        self.to_big_num().partial_cmp(&other.to_big_num())
+    }
 }
 
 impl PotatoCPU {
@@ -239,15 +243,23 @@ impl PotatoCPU {
                     },
                     ALUOperations::BitwiseNOperation(op_code) => {
                         a.apply_boolean_operation(b, op_code)
-                    }
+                    },
+                    ALUOperations::ShiftLeft => {
+                        a << b
+                    },
+                    ALUOperations::ShiftRight => {
+                        a >> b
+                    },
+                    ALUOperations::CompareGreaterThan => {
+                        GrowableBitAllocation::new_from_bool(a > b)
+                    },
+                    ALUOperations::GetLength => {
+                        let length = a.get_length();
+                        GrowableBitAllocation::new_from_num(length)
+                    },
                 };
                 self.registers.insert(Registers::Output, result);
             },
-            PotatoCodes::ResizeOutput(size) => {
-                let output = self.registers.get(&Registers::Output).cloned().unwrap_or(BigInt::from(0));
-                let resized = output & ((BigInt::from(1) << (size * 8)) - 1);
-                self.registers.insert(Registers::Output, resized);
-            }
             PotatoCodes::DataValue(..) => {
                 // no-op
             }
@@ -266,22 +278,5 @@ impl PotatoCPU {
             time_steps: self.time_steps,
             return_value: self.registers.get(&Registers::FunctionReturn).cloned()
         }
-    }
-
-    pub fn add_inputs(
-        input_a: &GrowableBitAllocation, input_b: &GrowableBitAllocation
-    ) -> GrowableBitAllocation {
-        let a = input_a.to_big_num();
-        let b = input_b.to_big_num();
-        let result = a + b;
-        GrowableBitAllocation::from_big_num(&result)
-    }
-    pub fn subtract_inputs(
-        input_a: &GrowableBitAllocation, input_b: &GrowableBitAllocation
-    ) -> GrowableBitAllocation {
-        let a = input_a.to_big_num();
-        let b = input_b.to_big_num();
-        let result = a - b;
-        GrowableBitAllocation::from_big_num(&result)
     }
 }
