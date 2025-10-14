@@ -5,10 +5,11 @@ use crate::potato_cpu::bit_allocation::{
     BitAllocation, FixedBitAllocation, GrowableBitAllocation
 };
 use arbitrary_int::{u4, UInt};
-use num_bigint::BigInt;
+use strum::IntoEnumIterator;
 use std::cmp::{Ordering, PartialEq, PartialOrd};
 use std::collections::HashMap;
-use std::ops::Add;
+use num_traits::ToPrimitive;
+use strum_macros::EnumIter;
 
 const AND_OP: UInt<u8, 4> = u4::new(0b1000);
 const OR_OP: UInt<u8, 4> = u4::new(0b1110);
@@ -58,7 +59,7 @@ pub enum ALUOperations {
     */
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash, EnumIter)]
 pub enum Registers {
     InputA,
     InputB,
@@ -99,6 +100,12 @@ pub enum PotatoCodes {
     MovStackToRegister(MovStackToRegister),
     CopyRegisterToRegister(Registers, Registers),
 
+    /*
+    START
+    VAL_0[0] STOP_0[0] VAL_1[0] STOP_1[0] ... VAL_n[0] STOP_n[0]
+    VAL_0[1] STOP_0[1] VAL_1[1] STOP_1[1] ... VAL_n[1] STOP_n[1]
+    ...
+    */
     StrideMovRegisterToStack(StrideMovRegisterToStack),
     StrideMovStackToRegister(StrideMovStackToRegister),
 
@@ -106,6 +113,8 @@ pub enum PotatoCodes {
     DataValue(GrowableBitAllocation),
     // move instruction data value to register
     MovDataValueToRegister(usize, Registers),
+    // jump to instruction index if Output register is zero
+    JumpIfZero(usize),
 }
 
 #[derive(Clone, Debug)]
@@ -141,14 +150,33 @@ impl PartialOrd for GrowableBitAllocation {
 
 impl PotatoCPU {
     pub fn new(spec: PotatoSpec) -> PotatoCPU {
+        let registers = Self::init_registers(&spec);
         PotatoCPU {
             stack: vec![],
             spec,
             time_steps: 0,
             program_counter: 0,
-            registers: HashMap::new(),
+            registers,
             halted: false
         }
+    }
+
+    pub fn init_registers(
+        spec: &PotatoSpec
+    ) -> HashMap<Registers, GrowableBitAllocation> {
+        let mut registers = HashMap::new();
+
+        for register in Registers::iter() {
+            let empty_val = GrowableBitAllocation::new(0);
+            if let Registers::Scratch(scratch_register_no) = register {
+                if scratch_register_no < spec.num_scratch_registers {
+                    registers.insert(register.clone(), empty_val);
+                }
+            } else {
+                registers.insert(register.clone(), empty_val);
+            }
+        }
+        registers
     }
 
     pub fn get_instructions(&self) -> &Vec<PotatoCodes> {
@@ -185,17 +213,15 @@ impl PotatoCPU {
             }
         }
     }
-    pub fn load_register(&mut self, reg: Registers) -> &GrowableBitAllocation {
+    pub fn load_register(&mut self, reg: Registers) -> &mut GrowableBitAllocation {
         self.validate_register(&reg);
         self.registers.entry(reg).or_insert(
             GrowableBitAllocation::new(0)
         )
     }
-    pub fn load_register_mut(&mut self, reg: Registers) -> &mut GrowableBitAllocation {
+    pub fn read_register(&self, reg: Registers) -> &GrowableBitAllocation {
         self.validate_register(&reg);
-        self.registers.entry(reg).or_insert(
-            GrowableBitAllocation::new(0)
-        )
+        self.registers.get(&reg).unwrap()
     }
 
     pub fn step(&mut self) -> StepResult {
@@ -216,55 +242,48 @@ impl PotatoCPU {
         let instruction = instructions[self.program_counter];
         match instruction {
             PotatoCodes::MovRegisterToStack(reg, index) => {
-                let register_value = self.load_register(reg);
+                let register_value = self.read_register(reg);
                 let chunks = register_value.split(self.spec.stack_width as usize);
                 for (i, chunk) in chunks.into_iter().enumerate() {
                     self.assign_to_stack(index + i, chunk);
                 }
             },
             PotatoCodes::MovStackToRegister(params) => {
-                let register = self.load_register_mut(params.register);
+                let register = self.load_register(params.register);
                 for i in 0..params.num_stack_addresses {
                     let stack_value = self.read_from_stack(params.stack_address + i);
                     register.append(&stack_value);
                 }
             },
-            PotatoCodes::Operate(op) => {
-                let a = self.load_register(Registers::InputA);
-                let b = self.load_register(Registers::InputB);
-                let a_size = a.get_length();
-                let b_size = b.get_length();
-                let max_size = std::cmp::max(a_size, b_size);
+            PotatoCodes::CopyRegisterToRegister(src, dst) => {
+                let src_value = self.read_register(src).clone();
+                self.registers.insert(dst, src_value);
+            },
+            PotatoCodes::StrideMovRegisterToStack(params) => {
+                let register_value = self.read_register(params.register);
+                let chunks = register_value.split(self.spec.stack_width as usize);
+                let data_stride = params.stride * 2;
+                let last_chunk_index = chunks.len() - 1;
 
-                let result = match op {
-                    ALUOperations::Add => a + b,
-                    ALUOperations::ReverseBits => {
-                        *a.clone().reverse()
-                    },
-                    ALUOperations::BitwiseNOperation(op_code) => {
-                        a.apply_boolean_operation(b, op_code)
-                    },
-                    ALUOperations::ShiftLeft => {
-                        a << b
-                    },
-                    ALUOperations::ShiftRight => {
-                        a >> b
-                    },
-                    ALUOperations::CompareGreaterThan => {
-                        GrowableBitAllocation::new_from_bool(a > b)
-                    },
-                    ALUOperations::GetLength => {
-                        let length = a.get_length();
-                        GrowableBitAllocation::new_from_num(length)
-                    },
-                };
+                for (k, chunk) in chunks.into_iter().enumerate() {
+                    let target_index = params.start_stack_address + k * data_stride;
+                    let stop_index = target_index + params.stride;
+                    let is_last_chunk = k == last_chunk_index;
+
+                    let mut stop_stack_value = self.spawn_new_stack_value();
+                    // TODO: assign stop value
+                    self.assign_to_stack(target_index, chunk);
+                }
+            }
+            PotatoCodes::Operate(op) => {
+                let result = self.process_alu_op(op);
                 self.registers.insert(Registers::Output, result);
             },
             PotatoCodes::DataValue(..) => {
                 // no-op
             }
             PotatoCodes::MovDataValueToRegister(index, reg) => {
-                let instruction = &self.instructions[*index];
+                let instruction = &self.get_instructions()[index];
                 if let PotatoCodes::DataValue(value) = instruction {
                     self.registers.insert(reg.clone(), value.clone());
                 } else {
@@ -275,8 +294,52 @@ impl PotatoCPU {
 
         StepResult {
             halted: self.halted,
-            time_steps: self.time_steps,
-            return_value: self.registers.get(&Registers::FunctionReturn).cloned()
+            time_steps: self.time_steps
         }
+    }
+    pub fn process_alu_op(&self, op: ALUOperations) -> GrowableBitAllocation {
+        let a = self.read_register(Registers::InputA);
+        let b = self.read_register(Registers::InputB);
+        let a_size = a.get_length();
+        let b_size = b.get_length();
+        let max_size = std::cmp::max(a_size, b_size);
+
+        let result = match op {
+            ALUOperations::Add => a + b,
+            ALUOperations::ReverseBits => {
+                let mut cloned = a.clone();
+                cloned.reverse();
+                cloned
+            },
+            ALUOperations::BitwiseNOperation(op_code) => {
+                a.apply_boolean_operation(b, op_code)
+            },
+            ALUOperations::ShiftLeft => {
+                a << b
+            },
+            ALUOperations::ShiftRight => {
+                a >> b
+            },
+            ALUOperations::CompareGreaterThan => {
+                GrowableBitAllocation::new_from_bool(a > b)
+            },
+            ALUOperations::GetLength => {
+                let length = a.get_length();
+                GrowableBitAllocation::new_from_num(length)
+            },
+            ALUOperations::Resize => {
+                let mut resized = a.clone();
+                let new_size = b.to_big_num().to_usize().unwrap();
+                resized.resize(new_size);
+                resized
+            },
+            ALUOperations::ResizeModulo => {
+                let mut resized_modulo = a.clone();
+                let new_size = b.to_big_num().to_usize().unwrap();
+                resized_modulo.resize_modulo(new_size);
+                resized_modulo
+            }
+        };
+        result
     }
 }

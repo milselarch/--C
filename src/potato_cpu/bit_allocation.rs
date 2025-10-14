@@ -12,6 +12,7 @@ pub trait BitAllocation {
         &mut self, num: &BigUint
     );
     fn copy_from(&mut self, other: &Self);
+    fn set(&mut self, index: usize, value: bool);
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
@@ -31,6 +32,11 @@ impl FixedBitAllocation {
     }
     pub fn new_zero(size: usize) -> Self {
         Self::new(size)
+    }
+    pub fn new_one(size: usize) -> Self {
+        let mut allocation = Self::new(size);
+        allocation.bit_allocation.bits[0] = true;
+        allocation
     }
     fn to_growable(&self) -> GrowableBitAllocation {
         self.bit_allocation.clone()
@@ -146,20 +152,19 @@ impl GrowableBitAllocation {
 
         GrowableBitAllocation::new_from(result_bits)
     }
-    pub fn circular_shift_left(
-        &mut self, shift_amount: &GrowableBitAllocation
-    ) -> &mut Self {
-        let len = self.bits.len();
-        if len == 0 { return self; }
-
-        let usize_shift_amount = shift_amount.
-        let shift = shift_amount % len;
-        self.bits.rotate_left(shift);
-        self
-    }
-
     pub fn resize(&mut self, new_size: usize) -> &mut Self {
         self.bits.resize(new_size, false);
+        self
+    }
+    pub fn resize_modulo(&mut self, size_modulo: usize) -> &mut Self {
+        let current_size = self.bits.len();
+        let modulo_size = current_size % size_modulo;
+
+        if modulo_size != 0 {
+            let new_size = current_size + (size_modulo - modulo_size);
+            assert!(new_size > current_size);
+            self.resize(new_size);
+        }
         self
     }
     pub fn signed_resize(&mut self, new_size: usize) -> &mut Self {
