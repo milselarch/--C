@@ -1,6 +1,5 @@
-use std::ops::{Add, Shl, Shr, Sub};
+use std::ops::{Add, Shl, Shr};
 use arbitrary_int::u4;
-use enum_iterator::all;
 use num_bigint::BigUint;
 use num_traits::ToPrimitive;
 
@@ -13,6 +12,9 @@ pub trait BitAllocation {
     );
     fn copy_from(&mut self, other: &Self);
     fn set(&mut self, index: usize, value: bool);
+    fn get(&self, index: usize) -> bool {
+        self.get_bits()[index]
+    }
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
@@ -58,6 +60,9 @@ impl BitAllocation for FixedBitAllocation {
     fn copy_from(&mut self, other: &FixedBitAllocation) {
         self.bit_allocation.copy_from(&other.bit_allocation);
     }
+    fn set(&mut self, index: usize, value: bool) {
+        self.bit_allocation.set(index, value);
+    }
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
@@ -73,6 +78,14 @@ impl GrowableBitAllocation {
     }
     pub fn new_zero() -> Self {
         Self::new(1)
+    }
+    pub fn from_fixed_allocations(allocations: &Vec<FixedBitAllocation>) -> Self {
+        // concatenate fixed allocations into one growable allocation
+        let mut result = Self::new(0);
+        for allocation in allocations.iter() {
+            result.append(allocation);
+        }
+        result
     }
     pub(crate) fn from_big_num(num: &BigUint) -> Self {
         let mut allocation = Self::new(0);
@@ -261,6 +274,9 @@ impl BitAllocation for GrowableBitAllocation {
             };
             self.bits[i] = other_bit_value;
         }
+    }
+    fn set(&mut self, index: usize, value: bool) {
+        self.bits[index] = value;
     }
 }
 impl Add for GrowableBitAllocation {

@@ -8,7 +8,7 @@ use arbitrary_int::{u4, UInt};
 use strum::IntoEnumIterator;
 use std::cmp::{Ordering, PartialEq, PartialOrd};
 use std::collections::HashMap;
-use num_traits::ToPrimitive;
+use num_traits::{ToPrimitive, Zero};
 use strum_macros::EnumIter;
 
 const AND_OP: UInt<u8, 4> = u4::new(0b1000);
@@ -88,7 +88,6 @@ pub struct StrideMovRegisterToStack {
 pub struct StrideMovStackToRegister {
     start_stack_address: usize,
     stride: usize,
-    num_stack_addresses: usize,
     register: Registers
 }
 
@@ -113,7 +112,7 @@ pub enum PotatoCodes {
     DataValue(GrowableBitAllocation),
     // move instruction data value to register
     MovDataValueToRegister(usize, Registers),
-    // jump to instruction index if Output register is zero
+    // jump to instruction index if Registers::Output is zero
     JumpIfZero(usize),
 }
 
@@ -232,14 +231,17 @@ impl PotatoCPU {
             };
         }
 
-        self.time_steps += 1;
-        self.program_counter += 1;
         let instructions = self.get_instructions();
         if self.program_counter >= instructions.len() {
             self.halted = true;
+            return StepResult {
+                halted: true,
+                time_steps: self.time_steps
+            }
         }
 
-        let instruction = instructions[self.program_counter];
+        let instruction = instructions[self.program_counter].clone();
+
         match instruction {
             PotatoCodes::MovRegisterToStack(reg, index) => {
                 let register_value = self.read_register(reg);
@@ -249,11 +251,14 @@ impl PotatoCPU {
                 }
             },
             PotatoCodes::MovStackToRegister(params) => {
-                let register = self.load_register(params.register);
+                let mut chunks: Vec<FixedBitAllocation> = vec![];
                 for i in 0..params.num_stack_addresses {
                     let stack_value = self.read_from_stack(params.stack_address + i);
-                    register.append(&stack_value);
+                    chunks.push(stack_value);
                 }
+                let new_register_value =
+                    GrowableBitAllocation::from_fixed_allocations(&chunks);
+                self.registers.insert(params.register, new_register_value);
             },
             PotatoCodes::CopyRegisterToRegister(src, dst) => {
                 let src_value = self.read_register(src).clone();
@@ -263,18 +268,49 @@ impl PotatoCPU {
                 let register_value = self.read_register(params.register);
                 let chunks = register_value.split(self.spec.stack_width as usize);
                 let data_stride = params.stride * 2;
-                let last_chunk_index = chunks.len() - 1;
+                let is_last_chunk_index = chunks.len() - 1;
 
                 for (k, chunk) in chunks.into_iter().enumerate() {
-                    let target_index = params.start_stack_address + k * data_stride;
-                    let stop_index = target_index + params.stride;
-                    let is_last_chunk = k == last_chunk_index;
+                    // stack position where current chunk's value is written
+                    let data_pos = params.start_stack_address + k * data_stride;
+                    // stack position where current chunk's continue value is written
+                    // this flags whether there is still more chunks after the current one
+                    let data_cont_pos = data_pos + 1;
+                    let is_last_chunk = k == is_last_chunk_index;
 
-                    let mut stop_stack_value = self.spawn_new_stack_value();
-                    // TODO: assign stop value
-                    self.assign_to_stack(target_index, chunk);
+                    let mut cont_stack_value = self.spawn_new_stack_value();
+                    if !is_last_chunk {
+                        // flag that there is more data after this chunk index
+                        cont_stack_value.set(0, true);
+                    }
+
+                    self.assign_to_stack(data_pos, chunk);
+                    self.assign_to_stack(data_cont_pos, cont_stack_value);
                 }
             }
+            PotatoCodes::StrideMovStackToRegister(params) => {
+                let data_stride = params.stride * 2;
+                let mut chunks: Vec<FixedBitAllocation> = vec![];
+                let chunk_index: usize = 0;
+
+                loop {
+                    let data_pos = params.start_stack_address + chunk_index * data_stride;
+                    let data_cont_pos = data_pos + 1;
+                    let stack_value = self.read_from_stack(data_pos);
+                    chunks.push(stack_value);
+
+                    let cont_stack_value = self.read_from_stack(data_cont_pos);
+                    if !cont_stack_value.get(0) {
+                        // no more data after this chunk index
+                        // this is like reaching a NULL terminator in a C array
+                        break;
+                    }
+                }
+
+                let new_register_value =
+                    GrowableBitAllocation::from_fixed_allocations(&chunks);
+                self.registers.insert(params.register, new_register_value);
+            },
             PotatoCodes::Operate(op) => {
                 let result = self.process_alu_op(op);
                 self.registers.insert(Registers::Output, result);
@@ -290,7 +326,20 @@ impl PotatoCPU {
                     panic!("Expected DataValue at index {}", index)
                 }
             }
+            PotatoCodes::JumpIfZero(target_index) => {
+                let output_value = self.read_register(Registers::Output);
+                if output_value.to_big_num().is_zero() {
+                    if target_index >= instructions.len() {
+                        self.halted = true;
+                    } else {
+                        self.program_counter = target_index;
+                    }
+                }
+            }
         }
+
+        self.time_steps += 1;
+        self.program_counter += 1;
 
         StepResult {
             halted: self.halted,
