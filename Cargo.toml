@@ -3,6 +3,10 @@ name = "ca-compiler"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+name = "ca_compiler"
+crate-type = ["cdylib", "rlib"]
+
 [dependencies]
 regex = "1.11.0"
 indent = "0.1.1"
@@ -13,3 +17,11 @@ log = "0.4.28"
 num-bigint = "0.4.6"
 num-traits = "0.2.19"
 arbitrary-int = "2.0.0"
+pyo3-stub-gen = "0.15.0"
+
+[dependencies.pyo3]
+pyo3 = {  version = "0.22.5", features = ["extension-module"] }
+pyo3-stub-gen = "0.6.0"
+version = "0.26.0"
+# "abi3-py38" tells pyo3 (and maturin) to build using the stable ABI with minimum Python version 3.8
+features = ["abi3-py38"]

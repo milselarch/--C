@@ -128,6 +128,32 @@ pub struct PotatoSpec {
     num_scratch_registers: u8,
     stack_width: u16,
 }
+impl PotatoSpec {
+    pub fn new(
+        instructions: Vec<PotatoCodes>,
+        num_scratch_registers: u8,
+        stack_width: u16
+    ) -> PotatoSpec {
+        PotatoSpec {
+            instructions,
+            num_scratch_registers,
+            stack_width
+        }
+    }
+    pub fn set_instructions(mut self, instructions: Vec<PotatoCodes>) -> Self {
+        self.instructions = instructions;
+        self
+    }
+    pub fn get_instructions(&self) -> &Vec<PotatoCodes> {
+        &self.instructions
+    }
+    pub fn get_num_scratch_registers(&self) -> u8 {
+        self.num_scratch_registers
+    }
+    pub fn get_stack_width(&self) -> u16 {
+        self.stack_width
+    }
+}
 
 /*
 Stack width is finite but registers are infinite size
@@ -148,16 +174,21 @@ impl PartialOrd for GrowableBitAllocation {
 }
 
 impl PotatoCPU {
-    pub fn new(spec: PotatoSpec) -> PotatoCPU {
+    pub fn new(spec: &PotatoSpec) -> PotatoCPU {
         let registers = Self::init_registers(&spec);
         PotatoCPU {
             stack: vec![],
-            spec,
+            spec: spec.clone(),
             time_steps: 0,
             program_counter: 0,
             registers,
             halted: false
         }
+    }
+    pub fn set_instructions(mut self, instructions: Vec<PotatoCodes>) -> Self {
+        assert_eq!(self.time_steps, 0);
+        self.spec = self.spec.set_instructions(instructions);
+        self
     }
 
     pub fn init_registers(
@@ -223,6 +254,18 @@ impl PotatoCPU {
         self.registers.get(&reg).unwrap()
     }
 
+    pub fn run(&mut self, max_steps: usize) -> StepResult {
+        for _ in 0..max_steps {
+            let step_result = self.step();
+            if step_result.halted {
+                return step_result;
+            }
+        }
+        StepResult {
+            halted: self.halted,
+            time_steps: self.time_steps
+        }
+    }
     pub fn step(&mut self) -> StepResult {
         if self.halted {
             return StepResult {

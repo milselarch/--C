@@ -24,6 +24,8 @@ Pull the C compiler tests submodule with `git submodule update --init --recursiv
 1. `cargo build --release`
 2. `./target/release/ca-compiler <YOUR_C_FILE.c>`
 
+Generate pyO3 stubs - `cargo run --bin stub_gen`
+
 ## Examples
 
 Test compilation on all test cases in chapter 2:

@@ -123,6 +123,9 @@ impl ASTConstant {
     pub fn to_u64(&self) -> Result<u64, ParseIntError> {
         self.value.parse::<u64>()
     }
+    pub fn to_usize(&self) -> Result<usize, ParseIntError> {
+        self.value.parse::<usize>()
+    }
 }
 
 #[derive(Clone, Debug)]

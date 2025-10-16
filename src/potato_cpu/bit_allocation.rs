@@ -92,6 +92,23 @@ impl GrowableBitAllocation {
         allocation.apply_big_num(num);
         allocation
     }
+    pub fn from_num(num: usize) -> Self {
+        let big_num = BigUint::from(num);
+        GrowableBitAllocation::from_big_num(&big_num)
+    }
+    pub fn from_i64(num: i64) -> Self {
+        if num >= 0 {
+            GrowableBitAllocation::from_num(num as usize)
+        } else {
+            let mut allocation = GrowableBitAllocation::from_num((-num) as usize);
+            allocation.apply_twos_complement();
+            allocation
+        }
+    }
+    pub fn to_i64(&self) -> Option<i64> {
+        let big_num = self.to_big_num();
+        big_num.to_i64()
+    }
     pub fn new_from_bool(value: bool) -> Self {
         GrowableBitAllocation::new_from(vec![value])
     }
