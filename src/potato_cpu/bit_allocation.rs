@@ -151,6 +151,11 @@ impl GrowableBitAllocation {
         }
         self
     }
+    pub fn clear_values(&mut self) {
+        for bit in self.bits.iter_mut() {
+            *bit = false;
+        }
+    }
 
     pub const fn translate_bool_op(&self, a: bool, b: bool, bool_operation: u4) -> bool {
         match bool_operation.value() {
@@ -272,10 +277,12 @@ impl BitAllocation for GrowableBitAllocation {
         }).collect();
         BigUint::from_bytes_le(&*bytes)
     }
+
     fn apply_big_num(&mut self, num: &BigUint) {
         let bytes = num.to_bytes_le();
-        self.resize(bytes.len() * 8);
-        self.bits.clear();
+        let length_in_bits = bytes.len() * 8;
+        self.resize(length_in_bits);
+        self.clear_values();
 
         for (byte_index, byte) in bytes.iter().enumerate() {
             for i in 0..8 {
@@ -283,7 +290,7 @@ impl BitAllocation for GrowableBitAllocation {
                 let bool_bit_value = bit_value != 0;
                 let target_index = byte_index * 8 + i;
 
-                if target_index >= self.bits.len() {
+                if target_index > self.bits.len() {
                     return;
                 } else {
                     self.bits[byte_index * 8 + i] = bool_bit_value;

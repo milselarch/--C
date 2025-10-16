@@ -74,6 +74,24 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "46c5e41b57b8bba42a04676d81cb89e9ee8e859a1a66f80a5a72e1cb76b34d43"
 
 [[package]]
+name = "ca-compiler"
+version = "0.1.0"
+dependencies = [
+ "arbitrary-int",
+ "cargo-cache",
+ "enum-iterator",
+ "indent",
+ "log",
+ "num-bigint",
+ "num-traits",
+ "pyo3",
+ "pyo3-stub-gen",
+ "regex",
+ "strum",
+ "strum_macros",
+]
+
+[[package]]
 name = "camino"
 version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -883,24 +901,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "89ae43fd86e4158d6db51ad8e2b80f313af9cc74f5c0e03ccb87de09998732de"
 dependencies = [
  "unicode-ident",
-]
-
-[[package]]
-name = "py-ca-compiler"
-version = "0.1.0"
-dependencies = [
- "arbitrary-int",
- "cargo-cache",
- "enum-iterator",
- "indent",
- "log",
- "num-bigint",
- "num-traits",
- "pyo3",
- "pyo3-stub-gen",
- "regex",
- "strum",
- "strum_macros",
 ]
 
 [[package]]
