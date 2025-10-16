@@ -124,8 +124,16 @@ impl GrowableBitAllocation {
         for bit in self.bits.iter_mut() {
             *bit = !*bit;
         }
-        // add one
+        self.increment()
+    }
+    pub fn increment(&mut self) -> &mut Self {
+        /*
+        TODO: I feel like implementing addition directly would be relatively
+            straightforward and more efficient than converting to BigUint
+            (and needing to import num-bigint just for that)
+        */
         let mut carry = true;
+
         for bit in self.bits.iter_mut() {
             if carry {
                 if *bit {
@@ -137,6 +145,9 @@ impl GrowableBitAllocation {
             } else {
                 break;
             }
+        }
+        if carry {
+            self.bits.push(true);
         }
         self
     }

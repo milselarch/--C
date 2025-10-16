@@ -61,6 +61,7 @@ pub enum ALUOperations {
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, EnumIter)]
 pub enum Registers {
+    ProgramCounter,
     InputA,
     InputB,
     // same purpose as EDI / ESI ... registers in System V ABI
@@ -162,7 +163,6 @@ pub struct PotatoCPU {
     pub spec: PotatoSpec,
     pub stack: Vec<FixedBitAllocation>,
     pub time_steps: usize,
-    pub program_counter: usize,
     pub registers: HashMap<Registers, GrowableBitAllocation>,
     pub halted: bool
 }
@@ -180,7 +180,6 @@ impl PotatoCPU {
             stack: vec![],
             spec: spec.clone(),
             time_steps: 0,
-            program_counter: 0,
             registers,
             halted: false
         }
@@ -266,6 +265,18 @@ impl PotatoCPU {
             time_steps: self.time_steps
         }
     }
+    pub fn read_program_counter(&self) -> usize {
+        self.read_register(Registers::ProgramCounter).to_big_num().to_usize().unwrap()
+    }
+    pub fn increment_program_counter(&mut self) {
+        let pc = self.load_register(Registers::ProgramCounter);
+        pc.increment();
+    }
+    pub fn set_program_counter(&mut self, value: usize) {
+        let pc = self.load_register(Registers::ProgramCounter);
+        *pc = GrowableBitAllocation::from_num(value);
+    }
+
     pub fn step(&mut self) -> StepResult {
         if self.halted {
             return StepResult {
@@ -275,7 +286,9 @@ impl PotatoCPU {
         }
 
         let instructions = self.get_instructions();
-        if self.program_counter >= instructions.len() {
+        let program_counter = self.read_program_counter();
+
+        if program_counter >= instructions.len() {
             self.halted = true;
             return StepResult {
                 halted: true,
@@ -283,7 +296,7 @@ impl PotatoCPU {
             }
         }
 
-        let instruction = instructions[self.program_counter].clone();
+        let instruction = instructions[program_counter].clone();
 
         match instruction {
             PotatoCodes::MovRegisterToStack(reg, index) => {
@@ -369,20 +382,20 @@ impl PotatoCPU {
                     panic!("Expected DataValue at index {}", index)
                 }
             }
-            PotatoCodes::JumpIfZero(target_index) => {
+            PotatoCodes::JumpIfZero(target_instruction_no) => {
                 let output_value = self.read_register(Registers::Output);
                 if output_value.to_big_num().is_zero() {
-                    if target_index >= instructions.len() {
+                    if target_instruction_no >= instructions.len() {
                         self.halted = true;
                     } else {
-                        self.program_counter = target_index;
+                        self.set_program_counter(target_instruction_no)
                     }
                 }
             }
         }
 
         self.time_steps += 1;
-        self.program_counter += 1;
+        self.increment_program_counter();
 
         StepResult {
             halted: self.halted,
@@ -392,9 +405,9 @@ impl PotatoCPU {
     pub fn process_alu_op(&self, op: ALUOperations) -> GrowableBitAllocation {
         let a = self.read_register(Registers::InputA);
         let b = self.read_register(Registers::InputB);
-        let a_size = a.get_length();
-        let b_size = b.get_length();
-        let max_size = std::cmp::max(a_size, b_size);
+        // let a_size = a.get_length();
+        // let b_size = b.get_length();
+        // let max_size = std::cmp::max(a_size, b_size);
 
         let result = match op {
             ALUOperations::Add => a + b,

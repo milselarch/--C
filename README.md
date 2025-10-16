@@ -25,8 +25,11 @@ Pull the C compiler tests submodule with `git submodule update --init --recursiv
 2. `./target/release/ca-compiler <YOUR_C_FILE.c>`
 
 For testing things related to the Potato CPU:
-1. Generate pyO3 stubs - `cargo run --bin stub_gen`
-2. build and install the potato CPU - `maturin develop --release`
+1. Create a python3.12 virtual environment - `python3.12 -m venv venv`
+2. Activate the virtual environment - `source venv/bin/activate`
+3. Install python dependencies - `pip install -r requirements.txt`
+4. Generate pyO3 stubs - `cargo run --bin stub_gen`
+5. build and install the potato CPU - `maturin develop --release`
 
 ## Examples
 
