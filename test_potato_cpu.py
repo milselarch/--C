@@ -1,12 +1,29 @@
+import argparse
 from typing import Final
 
-from py_ca_compiler import PyPotatoCPUTester
+from compiler_tester import CompilerTester
 
 
-COMPILER_TESTS_DIR: Final[str] = 'writing-a-c-compiler-tests'
+DEFAULT_CHAPTERS_TO_TEST: Final[list[int]] = [1]
 
-test_path = f'{COMPILER_TESTS_DIR}/tests/chapter_1/valid/return_2.c'
-potato_program = PyPotatoCPUTester.compile_from_source(test_path)
-result = potato_program.execute()
-print('Result:', result)
-assert result == 2
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        '-c', '--chapters', nargs='+', type=int, required=False,
+        default=DEFAULT_CHAPTERS_TO_TEST,
+        help='List of chapter numbers to test.'
+    )
+    parser.add_argument(
+        '--no-build', action='store_true',
+        help='Force rebuild of the compiler before testing.'
+    )
+    parsed_args = parser.parse_args()
+    # print("Parsed arguments:", parsed_args)
+    build_before_test = not parsed_args.no_build
+
+    tester = CompilerTester()
+    tester.validate_potato_cpu(
+        chapters_to_test=parsed_args.chapters,
+        build_before_test=build_before_test
+    )
