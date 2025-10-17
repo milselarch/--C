@@ -106,4 +106,15 @@ mod tests {
         let return_value = potato_program.execute();
         assert_eq!(return_value, 2);
     }
+
+    #[test]
+    fn test_multi_digit_return() {
+        let file_path = "./writing-a-c-compiler-tests/tests/chapter_1/valid/multi_digit.c";
+        let tacky_gen_result =
+            tacky::tacky_symbols::tacky_gen_from_filepath(file_path, false);
+        let tacky_program = tacky_gen_result.unwrap();
+        let potato_program = PotatoProgram::from_tacky_program(tacky_program);
+        let return_value = potato_program.execute();
+        assert_eq!(return_value, 100);
+    }
 }

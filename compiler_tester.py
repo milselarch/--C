@@ -6,7 +6,7 @@ from typing import Final
 from py_ca_compiler import PyPotatoCPUTester
 
 
-COMPILER_TESTS_DIR: Final[str] = 'writing-a-c-compiler-tests'
+COMPILER_TESTS_DIR: Final[str] = './writing-a-c-compiler-tests'
 
 
 class Prefix(StrEnum):
@@ -52,13 +52,30 @@ class CompilerTester(object):
 
     def execute_test_x86(self, test_name: str, chapter_no: int) -> int:
         test_path = self.get_test_path(test_name, chapter_no)
+        # build the C test file to assembly using the compiler
         run_result = subprocess.run([
-            f"./target/release/ca-compiler", test_path
-        ],
-            capture_output=True,
-            text=True
+            "./target/release/ca-compiler", test_path
+        ], capture_output=True, text=True)
+        assert run_result.returncode == 0
+
+        asm_path = test_path.replace('.c', '.s')
+        exe_path = test_path.replace('.c', '')
+
+        # create the executable
+        gcc_result = subprocess.run(
+            ["gcc", asm_path, "-o", exe_path],
+            capture_output=True, text=True
         )
-        return run_result.returncode
+        if gcc_result.returncode != 0:
+            print("GCC stdout:", gcc_result.stdout)
+            print("GCC stderr:", gcc_result.stderr)
+            raise RuntimeError("Failed to assemble and link the test.")
+
+        # Get executable return code
+        execute_result = subprocess.run(
+            [exe_path], capture_output=True, text=True
+        )
+        return execute_result.returncode
 
     def execute_test_potato_cpu(
         self, test_name: str, chapter_no: int, prefix: Prefix = Prefix.valid
@@ -122,6 +139,10 @@ class CompilerTester(object):
                 x86_return_code = tester.execute_test_x86(test_file, chapter)
                 potato_cpu_return_code = tester.execute_test_potato_cpu(
                     test_file, chapter
+                )
+                print(
+                    f'    x86 return code: {x86_return_code}, '
+                    f'Potato CPU return code: {potato_cpu_return_code}'
                 )
                 if x86_return_code != potato_cpu_return_code:
                     raise ValueError(
