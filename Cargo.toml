@@ -3,6 +3,10 @@ name = "ca-compiler"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+name = "py_ca_compiler"
+crate-type = ["cdylib", "rlib"]
+
 [dependencies]
 regex = "1.11.0"
 indent = "0.1.1"
@@ -10,3 +14,13 @@ enum-iterator = "2.1.0"
 strum = "0.27.2"
 strum_macros="0.27.2"
 log = "0.4.28"
+num-bigint = "0.4.6"
+num-traits = "0.2.19"
+arbitrary-int = "2.0.0"
+pyo3-stub-gen = "0.13.1"
+pyo3 = { version = "0.24.0" }
+cargo-cache = "0.8.3"
+
+[[bin]]
+name = "stub_gen"
+path = "src/bin/stub_gen.rs"
