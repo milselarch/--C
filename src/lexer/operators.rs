@@ -154,11 +154,21 @@ impl TokenBuilder for OperatorsBuilder {
     }
     fn build_token(&self) -> Option<Tokens> {
         // println!("BUILT_STR {}", self._get_built_str());
+        let mut max_length: usize = 0;
+        let mut longest_operator: Option<Tokens> = None;
+
         for processor in &self.operator_processors {
-            if processor.is_done() {
-                return Some(Tokens::Operator(processor.get_operator()));
+            if !processor.is_done() { continue; }
+            
+            let operator = processor.get_operator();
+            let operator_length = operator.to_string().len();
+
+            if operator_length > max_length {
+                max_length = operator_length;
+                longest_operator = Some(Tokens::Operator(processor.get_operator()));
             }
         }
-        None
+
+        longest_operator
     }
 }
