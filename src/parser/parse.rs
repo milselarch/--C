@@ -49,12 +49,14 @@ impl Identifier {
 pub enum SupportedUnaryOperators {
     Subtract,
     BitwiseNot,
+    Not,
 }
 impl SupportedUnaryOperators {
     pub fn from_operator(op: Operators) -> Option<SupportedUnaryOperators> {
         match op {
             Operators::Subtract => Some(SupportedUnaryOperators::Subtract),
             Operators::BitwiseNot => Some(SupportedUnaryOperators::BitwiseNot),
+            Operators::LogicalNot => Some(SupportedUnaryOperators::Not),
             _ => None,
         }
     }
@@ -79,6 +81,16 @@ pub enum SupportedBinaryOperators {
     Multiply,
     Divide,
     Modulo,
+
+    And,
+    Or,
+    CheckEqual,
+    NotEqual,
+    LessThan,
+    LessOrEqual,
+    GreaterThan,
+    GreaterOrEqual,
+    AssignEqual
 }
 impl SupportedBinaryOperators {
     pub fn from_operator(op: Operators) -> Option<SupportedBinaryOperators> {
@@ -88,16 +100,39 @@ impl SupportedBinaryOperators {
             Operators::Multiply => Some(SupportedBinaryOperators::Multiply),
             Operators::Divide => Some(SupportedBinaryOperators::Divide),
             Operators::Modulo => Some(SupportedBinaryOperators::Modulo),
+
+            Operators::LogicalAnd => Some(SupportedBinaryOperators::And),
+            Operators::LogicalOr => Some(SupportedBinaryOperators::Or),
+            Operators::EqualTo => Some(SupportedBinaryOperators::CheckEqual),
+            Operators::NotEqualTo => Some(SupportedBinaryOperators::NotEqual),
+            Operators::LessThan => Some(SupportedBinaryOperators::LessThan),
+            Operators::LessThanOrEqual => Some(SupportedBinaryOperators::LessOrEqual),
+            Operators::GreaterThan => Some(SupportedBinaryOperators::GreaterThan),
+            Operators::GreaterThanOrEqual => Some(SupportedBinaryOperators::GreaterOrEqual),
+            Operators::AssignEqual => Some(SupportedBinaryOperators::AssignEqual),
             _ => None,
         }
     }
     pub fn to_precedence(&self) -> u8 {
         match self {
-            SupportedBinaryOperators::Add => 45,
-            SupportedBinaryOperators::Subtract => 45,
             SupportedBinaryOperators::Multiply => 50,
             SupportedBinaryOperators::Divide => 50,
             SupportedBinaryOperators::Modulo => 50,
+
+            SupportedBinaryOperators::Add => 45,
+            SupportedBinaryOperators::Subtract => 45,
+
+            SupportedBinaryOperators::LessThan => 35,
+            SupportedBinaryOperators::LessOrEqual => 35,
+            SupportedBinaryOperators::GreaterThan => 35,
+            SupportedBinaryOperators::GreaterOrEqual => 35,
+
+            SupportedBinaryOperators::CheckEqual => 30,
+            SupportedBinaryOperators::NotEqual => 30,
+            SupportedBinaryOperators::And => 10,
+            SupportedBinaryOperators::Or => 5,
+
+            SupportedBinaryOperators::AssignEqual => 4,
         }
     }
     pub fn from_operator_as_result(
