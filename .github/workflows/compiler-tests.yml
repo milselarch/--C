@@ -37,8 +37,7 @@ jobs:
 
       - name: Test recent chapter
         run: |
-          python writing-a-c-compiler-tests/test_compiler ./target/release/ca-compiler --chapter 3 --stage lex; 
-          python writing-a-c-compiler-tests/test_compiler ./target/release/ca-compiler --chapter 3 --stage parse;
+          python writing-a-c-compiler-tests/test_compiler ./target/release/ca-compiler --chapter 4 --stage lex; 
 
       - name: Test full chapters
         run: |

@@ -125,13 +125,11 @@ impl SingleLineCommentBuilder {
         }
     }
 }
-
 impl Display for SingleLineCommentBuilder {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "SingleLineCommentBuilder {:?}", self.base)
     }
 }
-
 impl TokenBuilder for SingleLineCommentBuilder {
     fn base(&self) -> &BaseTokenBuilder { &self.base }
     fn base_mut(&mut self) -> &mut BaseTokenBuilder { &mut self.base }
@@ -150,6 +148,44 @@ impl TokenBuilder for SingleLineCommentBuilder {
         if self.is_done() {
             let comment = self._get_built_str().clone();
             Some(Tokens::Comment(comment))
+        } else {
+            None
+        }
+    }
+}
+
+struct PreprocessorBuilder {
+    base: BaseTokenBuilder,
+}
+impl PreprocessorBuilder {
+    fn new() -> PreprocessorBuilder {
+        PreprocessorBuilder {
+            base: BaseTokenBuilder::new(),
+        }
+    }
+}
+impl Display for PreprocessorBuilder {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "PreprocessorBuilder {:?}", self.base)
+    }
+}
+impl TokenBuilder for PreprocessorBuilder {
+    fn base(&self) -> &BaseTokenBuilder { &self.base }
+    fn base_mut(&mut self) -> &mut BaseTokenBuilder { &mut self.base }
+    fn process_char(&self, c: char) -> ProcessResult {
+        let length = self.get_length();
+        let new_char_valid = match length {
+            0 => c == '#',
+            _ => c != '\n'
+        };
+        let complete = length >= 2;
+        ProcessResult::new(complete, new_char_valid, new_char_valid)
+    }
+
+    fn build_token(&self) -> Option<Tokens> {
+        if self.is_done() {
+            let preprocess_command = self._get_built_str().clone();
+            Some(Tokens::Comment(preprocess_command))
         } else {
             None
         }
@@ -246,6 +282,7 @@ impl Lexer {
         vec![
             Box::new(MultiLineCommentBuilder::new()),
             Box::new(SingleLineCommentBuilder::new()),
+            Box::new(PreprocessorBuilder::new()),
             Box::new(IdentifierBuilder::new()),
             Box::new(ConstantBuilder::new()),
             Box::new(OperatorsBuilder::new()),

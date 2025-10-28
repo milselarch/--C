@@ -282,6 +282,7 @@ pub trait TokenBuilder: Display {
 pub enum Operators {
     Decrement,
     BitwiseNot,
+
     Add,
     Subtract,
     Multiply,
@@ -290,12 +291,24 @@ pub enum Operators {
     BitwiseXor,
     LeftShift,
     RightShift,
+
+    LogicalNot,
+    LogicalAnd,
+    LogicalOr,
+    EqualTo,
+    NotEqualTo,
+    AssignEqual,
+    LessThan,
+    GreaterThan,
+    LessThanOrEqual,
+    GreaterThanOrEqual
 }
 impl Operators {
     pub fn to_string(&self) -> String {
         match self {
             Operators::BitwiseNot => "~".to_string(),
             Operators::Decrement => "--".to_string(),
+
             Operators::Add => "+".to_string(),
             Operators::Subtract => "-".to_string(),
             Operators::Multiply => "*".to_string(),
@@ -304,6 +317,17 @@ impl Operators {
             Operators::BitwiseXor => "^".to_string(),
             Operators::LeftShift => "<<".to_string(),
             Operators::RightShift => ">>".to_string(),
+
+            Operators::LogicalNot => "!".to_string(),
+            Operators::LogicalAnd => "&&".to_string(),
+            Operators::LogicalOr => "||".to_string(),
+            Operators::EqualTo => "==".to_string(),
+            Operators::NotEqualTo => "!=".to_string(),
+            Operators::AssignEqual => "=".to_string(),
+            Operators::LessThan => "<".to_string(),
+            Operators::GreaterThan => ">".to_string(),
+            Operators::LessThanOrEqual => "<=".to_string(),
+            Operators::GreaterThanOrEqual => ">=".to_string(),
         }
     }
 }
