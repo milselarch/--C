@@ -7,6 +7,7 @@ pub mod potato_cpu;
 pub mod parser;
 pub mod tacky;
 pub mod asm_gen;
+pub mod automata;
 
 /// Formats the sum of two numbers as string.
 #[pyfunction]

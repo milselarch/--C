@@ -19,7 +19,7 @@ num-traits = "0.2.19"
 arbitrary-int = "2.0.0"
 pyo3-stub-gen = "0.13.1"
 pyo3 = { version = "0.24.0" }
-cargo-cache = "0.8.3"
+rayon = "1.11.0"
 
 [[bin]]
 name = "stub_gen"
