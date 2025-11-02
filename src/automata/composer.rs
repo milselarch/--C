@@ -1,5 +1,13 @@
 use std::collections::HashMap;
 
+/*
+TODO:
+    - add rules accumulator
+    - translate rules to multi-tape equations
+    - compose multi-tape automata to single-tape automata
+    - APL style rule builders (accumulator, reduct input, unary expansion)
+*/
+
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub enum Direction {
     Left,
@@ -29,8 +37,8 @@ pub struct TapeState {
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub enum TapeCellState {
     VOID,
-    TapeState(TapeState),
     HALT,
+    TapeState(TapeState),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
@@ -52,7 +60,10 @@ pub struct Tape {
     // this tape can write to the tape itself
     self_writeable: bool,
     write_rules: Vec<WriteRule>,
+    // cells extending rightwards
     data: Vec<u32>,
+    // cells extending leftwards
+    rev_data: Vec<u32>
 }
 impl Tape {
     pub fn new(
@@ -70,6 +81,7 @@ impl Tape {
             self_writeable,
             write_rules,
             data,
+            rev_data: vec![],
         }
     }
 }
