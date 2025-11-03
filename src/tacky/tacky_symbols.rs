@@ -147,9 +147,47 @@ impl PrintableTacky for BinaryInstruction {
 }
 
 #[derive(Clone, Debug)]
+pub struct CopyInstruction {
+    pub src: TackyValue,
+    pub dst: TackyVariable,
+    pub pop_context: Option<PoppedTokenContext>
+}
+
+#[derive(Clone, Debug)]
+pub struct JumpInstruction {
+    pub target: Identifier,
+    pub pop_context: Option<PoppedTokenContext>
+}
+
+#[derive(Clone, Debug)]
+pub struct JumpIfZeroInstruction {
+    pub condition: TackyValue,
+    pub target: Identifier,
+    pub pop_context: Option<PoppedTokenContext>
+}
+
+#[derive(Clone, Debug)]
+pub struct JumpIfNotZeroInstruction {
+    pub condition: TackyValue,
+    pub target: Identifier,
+    pub pop_context: Option<PoppedTokenContext>
+}
+
+#[derive(Clone, Debug)]
+pub struct LabelInstruction {
+    pub label: Identifier,
+    pub pop_context: Option<PoppedTokenContext>
+}
+
+#[derive(Clone, Debug)]
 pub enum TackyInstruction {
     UnaryInstruction(UnaryInstruction),
     BinaryInstruction(BinaryInstruction),
+    CopyInstruction(CopyInstruction),
+    JumpInstruction(JumpInstruction),
+    JumpIfZeroInstruction(JumpIfZeroInstruction),
+    JumpIfNotZeroInstruction(JumpIfNotZeroInstruction),
+    LabelInstruction(LabelInstruction),
     Return(TackyValue),
 }
 impl TackyInstruction {
@@ -232,9 +270,6 @@ impl TackyInstruction {
                 let inner_variant = sub_expr.expr_item;
                 Self::unroll_expression(inner_variant, var_counter)
             }
-            _ => {
-                panic!("INVALID EXPR_ITEM {}", format!("{:?}", expr_item));
-            }
         }
     }
 }
@@ -253,6 +288,10 @@ impl PrintableTacky for TackyInstruction {
                 result.push_str(&format!("{indent}Return:\n"));
                 result.push_str(&value.print_tacky_code(depth + 1));
                 result
+            }
+            _ => {
+                let indent = TAB.repeat(depth as usize);
+                format!("{}Unimplemented TackyInstruction {:?}\n", indent, self)
             }
         }
     }
@@ -305,12 +344,12 @@ pub struct TackyProgram {
 }
 impl TackyProgram {
     pub fn from_program(program: &ASTProgram) -> TackyProgram {
-        return TackyProgram {
+        TackyProgram {
             pop_context: program.pop_context.clone(),
             function: TackyFunction::from_function(
                 &program.function
             )
-        };
+        }
     }
 }
 impl PrintableTacky for TackyProgram {
