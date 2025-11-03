@@ -3,6 +3,14 @@ use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 use enum_iterator::Sequence;
 
+/*
+TODO:
+    - add rules accumulator
+    - translate rules to multi-tape equations
+    - compose multi-tape automata to single-tape automata
+    - APL style rule builders (accumulator, reduct input, unary expansion)
+*/
+
 #[derive(Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd, Sequence)]
 pub enum Direction {
     Left,
@@ -32,8 +40,8 @@ pub struct TapeState {
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub enum TapeCellState {
     VOID,
-    TapeState(TapeState),
     HALT,
+    TapeState(TapeState),
 }
 impl Ord for TapeCellState {
     fn cmp(&self, other: &Self) -> Ordering {
@@ -116,7 +124,10 @@ pub struct Tape {
     self_writeable: bool,
     write_rules: Vec<WriteRule>,
     allowed_states: HashSet<u32>,
+    // cells extending rightwards
     data: Vec<u32>,
+    // cells extending leftwards
+    rev_data: Vec<u32>
 }
 impl Tape {
     pub fn new(
@@ -135,6 +146,7 @@ impl Tape {
             write_rules,
             allowed_states: Default::default(),
             data,
+            rev_data: vec![],
         }
     }
     pub fn generate_all_combinations(&self) -> HashSet<CellExpectationCombo> {
