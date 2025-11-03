@@ -276,9 +276,6 @@ impl MultiTape {
         return tape_key;
     }
     pub fn generate_tape_equations(&self) {
-        let mut equations = HashMap::new();
-        for rule in &self.rules {
-            todo!()
-        }
+        todo!()
     }
 }
