@@ -50,3 +50,20 @@ Supported stages:
 - parse
 - tacky
 - codegen
+
+## TODO
+- implement tacky + code gen for relational operators
+- support chapter 2 test suit when targeting Potato CPU
+- implement assembly gen for relational operators
+- implement multi-tape cellular automata codegen
+- implement multi-tape cellular automata composition
+- multi-tape to single-tape cellular automata compiler
+
+# DONE
+- support chapter 1 test suite when targeting Potato CPU
+- add precedence climbing for expressions
+- implement tacky IR generation
+- binary operators support
+- unary operators support
+- recursive descent parser
+- implement assembly generation
