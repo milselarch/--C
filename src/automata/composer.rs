@@ -9,6 +9,7 @@ TODO:
     - translate rules to multi-tape equations
     - compose multi-tape automata to single-tape automata
     - APL style rule builders (accumulator, reduct input, unary expansion)
+    - theres a lot of runtime behavior that might be movable to compile time
 */
 
 const VOID_STATE: u32 = 0;
@@ -119,6 +120,16 @@ impl CellExpectationCombo {
         assert_eq!(prev_value, None);
     }
 }
+impl Hash for CellExpectationCombo {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        let mut expectations_vec: Vec<&CellExpectation> =
+            self.cell_expectations.values().collect();
+        expectations_vec.sort();
+        for expectation in expectations_vec {
+            expectation.hash(state);
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct WriteRule {
@@ -130,14 +141,22 @@ pub struct WriteRule {
     // at the same position
     read_tape_write_values: Vec<(ReadableTapeKey, TapeState)>,
 }
-impl Hash for CellExpectationCombo {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        let mut expectations_vec: Vec<&CellExpectation> =
-            self.cell_expectations.values().collect();
-        expectations_vec.sort();
-        for expectation in expectations_vec {
-            expectation.hash(state);
+impl WriteRule {
+    pub fn get_output_tape_keys(&self) -> HashSet<TapeKey> {
+        /*
+        Returns the tape keys for the tapes
+        that this tape write rule would write to
+        */
+        let mut output_tape_keys = HashSet::new();
+        output_tape_keys.insert(
+            TapeKey::Writable(self.write_tape.clone())
+        );
+        for (readable_key, _) in &self.read_tape_write_values {
+            output_tape_keys.insert(
+                TapeKey::Readable(readable_key.clone())
+            );
         }
+        output_tape_keys
     }
 }
 
@@ -178,6 +197,17 @@ impl Tape {
             rev_data: vec![],
         }
     }
+
+    pub fn get_dependent_tape_keys(&self) -> HashSet<TapeKey> {
+        let mut dependent_tape_keys = HashSet::new();
+        for rule in &self.write_rules {
+            for expectation in rule.expectations.cell_expectations.values() {
+                dependent_tape_keys.insert(expectation.expected_state.tape_key.clone());
+            }
+        }
+        dependent_tape_keys
+    }
+
     pub fn build_cell_expectation(
         &self, tape_cell_state: u32, direction: Direction
     ) -> CellExpectation {
@@ -261,7 +291,7 @@ impl MultiTape {
     }
     pub fn insert_named_tape(
         &mut self, name: String, tape: Tape
-    ) -> TapeKey{
+    ) -> TapeKey {
         let tape_key = if tape.self_writeable {
             let tape_index = self.write_tapes.len();
             self.write_tapes.push(tape);
@@ -275,7 +305,38 @@ impl MultiTape {
         self.tape_names_map.insert(name, tape_key.clone());
         return tape_key;
     }
-    pub fn generate_tape_equations(&self) {
+
+    pub fn get_tape_by_key(&self, tape_key: &TapeKey) -> Option<&Tape> {
+        match tape_key {
+            TapeKey::Readable(readable_key) => {
+                self.read_tapes.get(readable_key.tape_index)
+            },
+            TapeKey::Writable(writable_key) => {
+                self.write_tapes.get(writable_key.tape_index)
+            },
+        }
+    }
+
+    pub fn get_tapes_that_write_to_tape(
+        &self, target_tape_key: &TapeKey
+    ) -> Vec<&Tape> {
+        /*
+        Returns the tape keys of the write tapes that would write to
+        the given target tape key
+        */
+        let mut writing_tapes = Vec::new();
+
+        for tape in &self.write_tapes {
+            for rule in &tape.write_rules {
+                let output_tape_keys = rule.get_output_tape_keys();
+                todo!()
+            }
+        }
+        writing_tapes
+    }
+    pub fn generate_tape_equation(&self, tape_key: TapeKey) {
+        let tape = self.get_tape_by_key(&tape_key).unwrap();
+        let dependent_tape_keys = tape.get_dependent_tape_keys();
         todo!()
     }
 }
