@@ -197,6 +197,17 @@ impl Tape {
             rev_data: vec![],
         }
     }
+    pub fn get_tape_key(&self) -> TapeKey {
+        if self.self_writeable {
+            TapeKey::Writable(WritableTapeKey {
+                tape_index: self.tape_index,
+            })
+        } else {
+            TapeKey::Readable(ReadableTapeKey {
+                tape_index: self.tape_index,
+            })
+        }
+    }
 
     pub fn get_dependent_tape_keys(&self) -> HashSet<TapeKey> {
         let mut dependent_tape_keys = HashSet::new();
@@ -319,22 +330,35 @@ impl MultiTape {
 
     pub fn get_tapes_that_write_to_tape(
         &self, target_tape_key: &TapeKey
-    ) -> Vec<&Tape> {
+    ) -> HashSet<TapeKey> {
         /*
         Returns the tape keys of the write tapes that would write to
         the given target tape key
         */
-        let mut writing_tapes = Vec::new();
+        let mut writing_tape_keys = HashSet::new();
 
         for tape in &self.write_tapes {
             for rule in &tape.write_rules {
                 let output_tape_keys = rule.get_output_tape_keys();
-                todo!()
+                if !output_tape_keys.contains(target_tape_key) {
+                    continue;
+                }
+                let tape_key = tape.get_tape_key();
+                writing_tape_keys.insert(tape_key);
             }
         }
-        writing_tapes
+        writing_tape_keys
     }
     pub fn generate_tape_equation(&self, tape_key: TapeKey) {
+        /*
+        If we are a readable tape,
+        the equations would be a product of all the write rules
+        of all the write tapes that write to us, and our own tape.
+
+        If we are a writable tape,
+        the equations would be a product of all the readable tapes that
+        the write rules depend on, and our own tape rules.
+        */
         let tape = self.get_tape_by_key(&tape_key).unwrap();
         let dependent_tape_keys = tape.get_dependent_tape_keys();
         todo!()
