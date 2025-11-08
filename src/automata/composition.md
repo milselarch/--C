@@ -9,6 +9,7 @@ Plan to compose a multi-tape automata into a single-tape automata
     4. non-void cells in a write-tape can cause a 
        transition to themselves and read-only tapes
     5. a write-only tape cannot write to another write-only tape
+    6. a read tape can only be written to by at most one write tape
 2. generation of rules for the multi-tape cellular automata
     1. for every write tape W that writes to a read tape R
         1. for every possible combination of cells CW in W 
