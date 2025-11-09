@@ -19,7 +19,7 @@ Plan to compose a multi-tape automata into a single-tape automata
         2. for every possible combination of cells CW in W 
            that *does* write to the read tape
             1. just add that the combination to the 
-               equations for the write-only tape
+               equations for the read-only tape
 3. folding of multi-tape automata to a single-tape automata
     1. in the single tape automata the states that exist 
        will simply be the product of all the possible states in each 

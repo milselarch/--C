@@ -265,6 +265,7 @@ impl Tape {
 pub struct MultiTape {
     read_tapes: Vec<Tape>,
     write_tapes: Vec<Tape>,
+    input_tape_key: TapeKey,
     tape_names_map: HashMap<String, TapeKey>,
     rules: Vec<WriteRule>,
 }
@@ -272,6 +273,7 @@ impl MultiTape {
     pub fn new(
         read_tapes: Vec<Tape>,
         write_tapes: Vec<Tape>,
+        input_tape_key: TapeKey,
     ) -> MultiTape {
         for (index, tape) in read_tapes.iter().enumerate() {
             assert_eq!(
@@ -293,6 +295,7 @@ impl MultiTape {
         MultiTape {
             read_tapes,
             write_tapes,
+            input_tape_key,
             tape_names_map: Default::default(),
             rules: vec![],
         }
@@ -329,7 +332,7 @@ impl MultiTape {
     }
 
     pub fn get_tapes_that_write_to_tape(
-        &self, target_tape_key: &TapeKey
+        &self, target_tape_key: &TapeKey, exclude_self: bool
     ) -> HashSet<TapeKey> {
         /*
         Returns the tape keys of the write tapes that would write to
@@ -344,6 +347,9 @@ impl MultiTape {
                     continue;
                 }
                 let tape_key = tape.get_tape_key();
+                if exclude_self && &tape_key == target_tape_key {
+                    continue;
+                }
                 writing_tape_keys.insert(tape_key);
             }
         }
@@ -353,14 +359,15 @@ impl MultiTape {
         /*
         If we are a readable tape,
         the equations would be a product of all the write rules
-        of all the write tapes that write to us, and our own tape.
+        of the write tape that writes to us (if any), and all possible
+        combinations within our own tape.
 
         If we are a writable tape,
-        the equations would be a product of all the readable tapes that
-        the write rules depend on, and our own tape rules.
+        the equations would simply be our iwb tape's write rules
         */
         let tape = self.get_tape_by_key(&tape_key).unwrap();
         let dependent_tape_keys = tape.get_dependent_tape_keys();
         todo!()
     }
+    // TODO: a method to propagate all possible state combinations
 }
