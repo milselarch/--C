@@ -113,6 +113,13 @@ impl SupportedBinaryOperators {
             _ => None,
         }
     }
+    pub fn is_short_circuit(&self) -> bool {
+        match self {
+            SupportedBinaryOperators::And => true,
+            SupportedBinaryOperators::Or => true,
+            _ => false,
+        }
+    }
     pub fn to_precedence(&self) -> u8 {
         match self {
             SupportedBinaryOperators::Multiply => 50,

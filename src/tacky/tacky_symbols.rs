@@ -191,6 +191,68 @@ pub enum TackyInstruction {
     Return(TackyValue),
 }
 impl TackyInstruction {
+    pub fn unroll_and_short_circuit(
+        left: ExpressionVariant,
+        right: ExpressionVariant,
+        var_counter: u64,
+    ) -> UnrollResult {
+        /*
+        output format:
+        ----------------------
+        <instructions for e1>
+        v1 = <result of e1>
+        JumpIfZero(v1, false_label)
+        <instructions for e2>
+        v2 = <result of e2>
+        JumpIfZero(v2, false_label)
+        result = 1
+        Jump(end)
+        Label(false_label)
+        Logical and Relational Operators
+        result = 0
+        Label(end)
+        */
+        // TODO: there should be a tacky instruction just for pop context
+        //   across multiple instructions
+        let label = Identifier::new(format!(
+            "short_circuit_end_and_{}", var_counter
+        ));
+        let left_unroll_result = Self::unroll_expression(
+            left, var_counter
+        );
+        let var_counter = left_unroll_result.next_free_var_id;
+        let right_unroll_result = Self::unroll_expression(
+            right, var_counter
+        );
+        let var_counter = right_unroll_result.next_free_var_id;
+        let result_tacky_var = TackyVariable::new(var_counter);
+        let var_counter = var_counter + 1;
+
+        // <instructions for e1>
+        let mut combined_instructions = vec![];
+        combined_instructions.extend(left_unroll_result.instructions);
+        // JumpIfZero(v1, false_label)
+        combined_instructions.push(TackyInstruction::JumpIfZeroInstruction(
+            JumpIfZeroInstruction {
+                condition: left_unroll_result.value,
+                target: label.clone(),
+                pop_context: None
+            }
+        ));
+        // <instructions for e2>
+        combined_instructions.extend(right_unroll_result.instructions);
+        // JumpIfZero(v2, false_label)
+        combined_instructions.push(TackyInstruction::JumpIfZeroInstruction(
+            JumpIfZeroInstruction {
+                condition: right_unroll_result.value,
+                target: label.clone(),
+                pop_context: None
+            }
+        ));
+        combined_instructions.push()
+
+        panic!("Short-circuit unrolling not implemented yet");
+    }
     pub fn unroll_expression(
         expr_item: ExpressionVariant,
         var_counter: u64
