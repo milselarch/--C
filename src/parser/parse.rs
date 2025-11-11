@@ -158,10 +158,17 @@ impl SupportedBinaryOperators {
 
 #[derive(Clone, Debug)]
 pub struct ASTConstant {
+    // TODO: use bignum instead of string (?)
     pub(crate) value: String,
     pub(crate) pop_context: Option<PoppedTokenContext>
 }
 impl ASTConstant {
+    pub fn new(value: &str) -> ASTConstant {
+        ASTConstant {
+            value: value.to_owned(),
+            pop_context: None
+        }
+    }
     pub fn to_u64(&self) -> Result<u64, ParseIntError> {
         self.value.parse::<u64>()
     }

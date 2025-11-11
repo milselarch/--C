@@ -7,7 +7,9 @@ use crate::parser::parse::{
 };
 use crate::parser::parser_helpers::{ParseError, PoppedTokenContext};
 
-
+pub trait ToTackyInstruction: Sized {
+    fn to_tacky_instruction(&self) -> TackyInstruction;
+}
 pub trait PrintableTacky {
     fn print_tacky_code(&self, depth: u64) -> String;
 }
@@ -66,6 +68,12 @@ pub enum TackyValue {
     Var(TackyVariable)
 }
 impl TackyValue {
+    pub fn new_var(id: u64) -> TackyValue {
+        TackyValue::Var(TackyVariable::new(id))
+    }
+    pub fn new_constant(value: &str) -> TackyValue {
+        TackyValue::Constant(ASTConstant::new(value))
+    }
     pub fn get_id(&self) -> Option<u64> {
         match self {
             TackyValue::Constant(_) => None,
@@ -95,7 +103,20 @@ pub struct UnaryInstruction {
     pub pop_context: Option<PoppedTokenContext>
 }
 impl UnaryInstruction {
-    pub fn to_tacky_instruction(&self) -> TackyInstruction {
+    pub fn new(
+        operator: SupportedUnaryOperators, src: TackyValue,
+        dst: TackyVariable
+    ) -> UnaryInstruction {
+        UnaryInstruction {
+            operator,
+            src,
+            dst,
+            pop_context: None
+        }
+    }
+}
+impl ToTackyInstruction for UnaryInstruction {
+    fn to_tacky_instruction(&self) -> TackyInstruction {
         TackyInstruction::UnaryInstruction(self.clone())
     }
 }
@@ -124,7 +145,23 @@ pub struct BinaryInstruction {
     pub pop_context: Option<PoppedTokenContext>
 }
 impl BinaryInstruction {
-    pub fn to_tacky_instruction(&self) -> TackyInstruction {
+    pub fn new(
+        operator: SupportedBinaryOperators,
+        left: TackyValue,
+        right: TackyValue,
+        dst: TackyVariable
+    ) -> BinaryInstruction {
+        BinaryInstruction {
+            operator,
+            left,
+            right,
+            dst,
+            pop_context: None
+        }
+    }
+}
+impl ToTackyInstruction for BinaryInstruction {
+    fn to_tacky_instruction(&self) -> TackyInstruction {
         TackyInstruction::BinaryInstruction(self.clone())
     }
 }
@@ -152,11 +189,43 @@ pub struct CopyInstruction {
     pub dst: TackyVariable,
     pub pop_context: Option<PoppedTokenContext>
 }
+impl CopyInstruction {
+    pub fn new(
+        src: TackyValue,
+        dst: TackyVariable
+    ) -> CopyInstruction {
+        CopyInstruction {
+            src,
+            dst,
+            pop_context: None
+        }
+    }
+}
+impl ToTackyInstruction for CopyInstruction {
+    fn to_tacky_instruction(&self) -> TackyInstruction {
+        TackyInstruction::CopyInstruction(self.clone())
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct JumpInstruction {
     pub target: Identifier,
     pub pop_context: Option<PoppedTokenContext>
+}
+impl JumpInstruction {
+    pub fn new(
+        target: Identifier
+    ) -> JumpInstruction {
+        JumpInstruction {
+            target,
+            pop_context: None
+        }
+    }
+}
+impl ToTackyInstruction for JumpInstruction {
+    fn to_tacky_instruction(&self) -> TackyInstruction {
+        TackyInstruction::JumpInstruction(self.clone())
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -165,6 +234,23 @@ pub struct JumpIfZeroInstruction {
     pub target: Identifier,
     pub pop_context: Option<PoppedTokenContext>
 }
+impl JumpIfZeroInstruction {
+    pub fn new(
+        condition: TackyValue,
+        target: Identifier
+    ) -> JumpIfZeroInstruction {
+        JumpIfZeroInstruction {
+            condition,
+            target,
+            pop_context: None
+        }
+    }
+}
+impl ToTackyInstruction for JumpIfZeroInstruction {
+    fn to_tacky_instruction(&self) -> TackyInstruction {
+        TackyInstruction::JumpIfZeroInstruction(self.clone())
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct JumpIfNotZeroInstruction {
@@ -172,11 +258,43 @@ pub struct JumpIfNotZeroInstruction {
     pub target: Identifier,
     pub pop_context: Option<PoppedTokenContext>
 }
+impl JumpIfNotZeroInstruction {
+    pub fn new(
+        condition: TackyValue,
+        target: Identifier
+    ) -> JumpIfNotZeroInstruction {
+        JumpIfNotZeroInstruction {
+            condition,
+            target,
+            pop_context: None
+        }
+    }
+}
+impl ToTackyInstruction for JumpIfNotZeroInstruction {
+    fn to_tacky_instruction(&self) -> TackyInstruction {
+        TackyInstruction::JumpIfNotZeroInstruction(self.clone())
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct LabelInstruction {
     pub label: Identifier,
     pub pop_context: Option<PoppedTokenContext>
+}
+impl LabelInstruction {
+    pub fn new(
+        label: Identifier
+    ) -> LabelInstruction {
+        LabelInstruction {
+            label,
+            pop_context: None
+        }
+    }
+}
+impl ToTackyInstruction for LabelInstruction {
+    fn to_tacky_instruction(&self) -> TackyInstruction {
+        TackyInstruction::LabelInstruction(self.clone())
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -190,14 +308,47 @@ pub enum TackyInstruction {
     LabelInstruction(LabelInstruction),
     Return(TackyValue),
 }
+impl ToTackyInstruction for TackyInstruction {
+    fn to_tacky_instruction(&self) -> TackyInstruction {
+        self.clone()
+    }
+}
 impl TackyInstruction {
+    pub fn unroll_or_short_circuit(
+        left: ExpressionVariant,
+        right: ExpressionVariant,
+        var_counter: u64,
+    ) -> UnrollResult {
+        /*
+        TODO: support for an annotated block of instructions
+          would be really nice
+        output format (OR):
+        ----------------------
+        <instructions for e1>
+        v1 = <result of e1>
+        JumpIfOne(v1, true_label)
+        <instructions for e2>
+        v2 = <result of e2>
+        JumpIfOne(v2, true_label)
+
+        result = 0
+        Jump(end)
+        Label(true_label)
+        result = 1
+        Label(end)
+        */
+        todo!()
+    }
+
     pub fn unroll_and_short_circuit(
         left: ExpressionVariant,
         right: ExpressionVariant,
         var_counter: u64,
     ) -> UnrollResult {
         /*
-        output format:
+        TODO: support for an annotated block of instructions
+          would be really nice
+        output format (AND):
         ----------------------
         <instructions for e1>
         v1 = <result of e1>
@@ -205,53 +356,71 @@ impl TackyInstruction {
         <instructions for e2>
         v2 = <result of e2>
         JumpIfZero(v2, false_label)
+
         result = 1
         Jump(end)
         Label(false_label)
-        Logical and Relational Operators
         result = 0
         Label(end)
         */
         // TODO: there should be a tacky instruction just for pop context
         //   across multiple instructions
-        let label = Identifier::new(format!(
-            "short_circuit_end_and_{}", var_counter
-        ));
-        let left_unroll_result = Self::unroll_expression(
-            left, var_counter
-        );
+        let false_label =
+            Identifier::new(format!("short_circuit_end_false_{}", var_counter));
+        let end_label =
+            Identifier::new(format!("short_circuit_end_{}", var_counter));
+
+        let left_unroll_result = Self::unroll_expression(left, var_counter);
         let var_counter = left_unroll_result.next_free_var_id;
-        let right_unroll_result = Self::unroll_expression(
-            right, var_counter
-        );
+        let right_unroll_result = Self::unroll_expression(right, var_counter);
         let var_counter = right_unroll_result.next_free_var_id;
+        // contains the result of the short-circuit and operation
         let result_tacky_var = TackyVariable::new(var_counter);
         let var_counter = var_counter + 1;
 
+        let mut circuit_instructions: Vec<dyn ToTackyInstruction> = vec![];
         // <instructions for e1>
-        let mut combined_instructions = vec![];
-        combined_instructions.extend(left_unroll_result.instructions);
+        circuit_instructions.extend(left_unroll_result.instructions);
         // JumpIfZero(v1, false_label)
-        combined_instructions.push(TackyInstruction::JumpIfZeroInstruction(
-            JumpIfZeroInstruction {
-                condition: left_unroll_result.value,
-                target: label.clone(),
-                pop_context: None
-            }
+        circuit_instructions.push(JumpIfZeroInstruction::new(
+            left_unroll_result.value,
+            false_label
         ));
         // <instructions for e2>
-        combined_instructions.extend(right_unroll_result.instructions);
+        circuit_instructions.extend(right_unroll_result.instructions);
         // JumpIfZero(v2, false_label)
-        combined_instructions.push(TackyInstruction::JumpIfZeroInstruction(
-            JumpIfZeroInstruction {
-                condition: right_unroll_result.value,
-                target: label.clone(),
-                pop_context: None
-            }
+        circuit_instructions.push(JumpIfZeroInstruction::new(
+            right_unroll_result.value,
+            false_label
         ));
-        combined_instructions.push()
 
-        panic!("Short-circuit unrolling not implemented yet");
+        // result = 1
+        circuit_instructions.push(CopyInstruction::new(
+            TackyValue::Constant(ASTConstant::new("1")),
+            result_tacky_var
+        ));
+        // Jump(end)
+        circuit_instructions.push(JumpInstruction::new(end_label));
+        // Label(false_label)
+        circuit_instructions.push(LabelInstruction::new(false_label));
+        // result = 0
+        circuit_instructions.push(CopyInstruction::new(
+            TackyValue::Constant(ASTConstant::new("0")),
+            result_tacky_var
+        ));
+        // Label(end)
+        circuit_instructions.push(LabelInstruction::new(end_label));
+
+        let tacky_instructions: Vec<TackyInstruction> = circuit_instructions.iter().map(
+            |instr| instr.to_tacky_instruction()
+        ).collect();
+
+        let unroll_result = UnrollResult::new(
+            tacky_instructions,
+            TackyValue::Var(result_tacky_var),
+            var_counter
+        );
+        unroll_result
     }
     pub fn unroll_expression(
         expr_item: ExpressionVariant,
