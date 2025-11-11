@@ -477,6 +477,15 @@ impl TackyInstruction {
                 )
             }
             ExpressionVariant::BinaryOperation(operator, left, right) => {
+                if operator.is_short_circuit() {
+                    return Self::unroll_short_circuit(
+                        left.expr_item.clone(),
+                        right.expr_item.clone(),
+                        var_counter,
+                        operator == SupportedBinaryOperators::And
+                    );
+                }
+
                 let left_expr_item = left.expr_item.clone();
                 let right_expr_item = right.expr_item.clone();
 

@@ -74,7 +74,7 @@ impl SupportedUnaryOperators {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SupportedBinaryOperators {
     Add,
     Subtract,
