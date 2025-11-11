@@ -298,6 +298,46 @@ impl ToTackyInstruction for LabelInstruction {
 }
 
 #[derive(Clone, Debug)]
+pub struct AnnotationStartInstruction {
+    pub label: Identifier,
+    pub pop_context: Option<PoppedTokenContext>
+}
+impl AnnotationStartInstruction {
+    pub fn new(
+        label: Identifier, pop_context: Option<PoppedTokenContext>
+    ) -> AnnotationStartInstruction {
+        AnnotationStartInstruction {
+            label, pop_context
+        }
+    }
+}
+impl ToTackyInstruction for AnnotationStartInstruction {
+    fn to_tacky_instruction(&self) -> TackyInstruction {
+        TackyInstruction::AnnotationStartInstruction(self.clone())
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct AnnotationEndInstruction {
+    pub label: Identifier,
+    pub pop_context: Option<PoppedTokenContext>
+}
+impl AnnotationEndInstruction {
+    pub fn new(
+        label: Identifier, pop_context: Option<PoppedTokenContext>
+    ) -> AnnotationEndInstruction {
+        AnnotationEndInstruction {
+            label, pop_context
+        }
+    }
+}
+impl ToTackyInstruction for AnnotationEndInstruction {
+    fn to_tacky_instruction(&self) -> TackyInstruction {
+        TackyInstruction::AnnotationEndInstruction(self.clone())
+    }
+}
+
+#[derive(Clone, Debug)]
 pub enum TackyInstruction {
     UnaryInstruction(UnaryInstruction),
     BinaryInstruction(BinaryInstruction),
@@ -306,6 +346,8 @@ pub enum TackyInstruction {
     JumpIfZeroInstruction(JumpIfZeroInstruction),
     JumpIfNotZeroInstruction(JumpIfNotZeroInstruction),
     LabelInstruction(LabelInstruction),
+    AnnotationStartInstruction(AnnotationStartInstruction),
+    AnnotationEndInstruction(AnnotationEndInstruction),
     Return(TackyValue),
 }
 impl ToTackyInstruction for TackyInstruction {
@@ -563,7 +605,10 @@ impl TackyFunction {
         let inner_unroll = TackyInstruction::unroll_expression(expr_item, 0);
 
         let temp_value = inner_unroll.value;
-        let mut sub_instructions = inner_unroll.instructions;
+        let mut sub_instructions = vec![];
+        // TODO: add annotated instructions for function start
+
+        sub_instructions.extend(inner_unroll.instructions);
         let return_instruction = TackyInstruction::Return(temp_value);
         sub_instructions.push(return_instruction);
 

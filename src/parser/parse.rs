@@ -412,7 +412,7 @@ impl Expression {
 
 pub struct Statement {
     pub(crate) expression: Expression,
-    pop_context: Option<PoppedTokenContext>
+    pub(crate) pop_context: Option<PoppedTokenContext>
 }
 impl Statement {
     pub fn new(expression: Expression) -> Statement {
