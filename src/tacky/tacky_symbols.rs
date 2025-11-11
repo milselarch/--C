@@ -314,61 +314,75 @@ impl ToTackyInstruction for TackyInstruction {
     }
 }
 impl TackyInstruction {
-    pub fn unroll_or_short_circuit(
+    pub fn unroll_short_circuit(
         left: ExpressionVariant,
         right: ExpressionVariant,
         var_counter: u64,
+        is_and: bool
     ) -> UnrollResult {
         /*
         TODO: support for an annotated block of instructions
           would be really nice
-        output format (OR):
+
+        // Conditional jump instruction to use for short-circuit
+        CondJump(v) :=
+            JumpIfZero(v, short_circuit_jmp_label) if AND
+            JumpIfNotZero(v, short_circuit_jmp_label)
+
+        // return value to assign if no short-circuit occurs
+        NoCondJumpValue :=
+            1 if AND
+            0 if OR
+        CondJumpValue :=
+            0 if AND
+            1 if OR
+
+        output format (AND / OR):
         ----------------------
         <instructions for e1>
         v1 = <result of e1>
-        JumpIfOne(v1, true_label)
+        CondJump(v1)
         <instructions for e2>
         v2 = <result of e2>
-        JumpIfOne(v2, true_label)
+        CondJump(v2)
 
-        result = 0
-        Jump(end)
-        Label(true_label)
-        result = 1
-        Label(end)
+        result = NoCondJumpValue
+        Jump(short_circuit_end_label)
+        Label(short_circuit_jmp_label)
+        result = CondJumpValue
+        Label(short_circuit_end_label)
         */
-        todo!()
-    }
-
-    pub fn unroll_and_short_circuit(
-        left: ExpressionVariant,
-        right: ExpressionVariant,
-        var_counter: u64,
-    ) -> UnrollResult {
-        /*
-        TODO: support for an annotated block of instructions
-          would be really nice
-        output format (AND):
-        ----------------------
-        <instructions for e1>
-        v1 = <result of e1>
-        JumpIfZero(v1, false_label)
-        <instructions for e2>
-        v2 = <result of e2>
-        JumpIfZero(v2, false_label)
-
-        result = 1
-        Jump(end)
-        Label(false_label)
-        result = 0
-        Label(end)
-        */
-        // TODO: there should be a tacky instruction just for pop context
-        //   across multiple instructions
-        let false_label =
-            Identifier::new(format!("short_circuit_end_false_{}", var_counter));
+        let jump_label =
+            Identifier::new(format!("short_circuit_jmp_{}", var_counter));
         let end_label =
             Identifier::new(format!("short_circuit_end_{}", var_counter));
+
+        let build_conditional_jump = |
+            value: TackyValue
+        | -> TackyInstruction {
+            if is_and {
+                // we short circuit if one of the operands is zero
+                JumpIfZeroInstruction::new(
+                    value, jump_label.clone()
+                ).to_tacky_instruction()
+            } else {
+                // we short circuit if one of the operands is non-zero
+                JumpIfNotZeroInstruction::new(
+                    value, jump_label.clone()
+                ).to_tacky_instruction()
+            }
+        };
+
+        let no_jump_result_value = if is_and {
+            TackyValue::Constant(ASTConstant::new("1"))
+        } else {
+            TackyValue::Constant(ASTConstant::new("0"))
+        };
+        let jump_result_value = if is_and {
+            TackyValue::Constant(ASTConstant::new("0"))
+        } else {
+            TackyValue::Constant(ASTConstant::new("1"))
+        };
 
         let left_unroll_result = Self::unroll_expression(left, var_counter);
         let var_counter = left_unroll_result.next_free_var_id;
@@ -378,38 +392,36 @@ impl TackyInstruction {
         let result_tacky_var = TackyVariable::new(var_counter);
         let var_counter = var_counter + 1;
 
-        let mut circuit_instructions: Vec<dyn ToTackyInstruction> = vec![];
+        let mut circuit_instructions: Vec<TackyInstruction> = vec![];
         // <instructions for e1>
         circuit_instructions.extend(left_unroll_result.instructions);
-        // JumpIfZero(v1, false_label)
-        circuit_instructions.push(JumpIfZeroInstruction::new(
-            left_unroll_result.value,
-            false_label
-        ));
+        // CondJump(v1)
+        circuit_instructions.push(build_conditional_jump(left_unroll_result.value));
         // <instructions for e2>
         circuit_instructions.extend(right_unroll_result.instructions);
-        // JumpIfZero(v2, false_label)
-        circuit_instructions.push(JumpIfZeroInstruction::new(
-            right_unroll_result.value,
-            false_label
-        ));
+        // CondJump(v2)
+        circuit_instructions.push(build_conditional_jump(right_unroll_result.value));
 
-        // result = 1
+        // result = NoCondJumpValue
         circuit_instructions.push(CopyInstruction::new(
-            TackyValue::Constant(ASTConstant::new("1")),
-            result_tacky_var
-        ));
-        // Jump(end)
-        circuit_instructions.push(JumpInstruction::new(end_label));
-        // Label(false_label)
-        circuit_instructions.push(LabelInstruction::new(false_label));
-        // result = 0
+            no_jump_result_value, result_tacky_var.clone()
+        ).to_tacky_instruction());
+        // Jump(short_circuit_end_label)
+        circuit_instructions.push(
+            JumpInstruction::new(end_label.clone()).to_tacky_instruction()
+        );
+        // Label(short_circuit_jmp_label)
+        circuit_instructions.push(
+            LabelInstruction::new(jump_label.clone()).to_tacky_instruction()
+        );
+        // result = CondJumpValue
         circuit_instructions.push(CopyInstruction::new(
-            TackyValue::Constant(ASTConstant::new("0")),
-            result_tacky_var
-        ));
-        // Label(end)
-        circuit_instructions.push(LabelInstruction::new(end_label));
+            jump_result_value, result_tacky_var.clone()
+        ).to_tacky_instruction());
+        // Label(short_circuit_end_label)
+        circuit_instructions.push(
+            LabelInstruction::new(end_label).to_tacky_instruction()
+        );
 
         let tacky_instructions: Vec<TackyInstruction> = circuit_instructions.iter().map(
             |instr| instr.to_tacky_instruction()
@@ -422,6 +434,7 @@ impl TackyInstruction {
         );
         unroll_result
     }
+
     pub fn unroll_expression(
         expr_item: ExpressionVariant,
         var_counter: u64
