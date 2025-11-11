@@ -58,6 +58,9 @@ Supported stages:
 - implement multi-tape cellular automata codegen
 - implement multi-tape cellular automata composition
 - multi-tape to single-tape cellular automata compiler
+- implement web automata visualizer tool
+- implement TUI for automata visualization
+- add annotated blocks for assembly generated
 
 # DONE
 - support chapter 1 test suite when targeting Potato CPU

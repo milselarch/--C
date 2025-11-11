@@ -364,6 +364,12 @@ impl AsmInstruction {
             TackyInstruction::BinaryInstruction(binary_instruction) => {
                 AsmBinaryInstruction::unpack_from_tacky(binary_instruction)
             },
+            _ => {
+                panic!(
+                    "Unsupported TackyInstruction for AsmInstruction conversion: {:?}",
+                    tacky_instruction
+                );
+            }
         }
     }
 }
