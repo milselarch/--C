@@ -14,6 +14,24 @@ TODO:
 
 const VOID_STATE: u32 = 0;
 
+pub fn get_cell_expectation_combo_product(
+    expectations1: &HashSet<CellExpectationCombo>,
+    expectations2: &HashSet<CellExpectationCombo>,
+) -> HashSet<CellExpectationCombo> {
+    /*
+    Returns the Cartesian product of two sets of cell expectation combos
+    */
+    let mut product_combos = HashSet::new();
+
+    for combo1 in expectations1 {
+        for combo2 in expectations2 {
+            todo!()
+        }
+    }
+
+    product_combos
+}
+
 #[derive(Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd, Sequence)]
 pub enum Direction {
     Left,
@@ -119,6 +137,23 @@ impl CellExpectationCombo {
         let prev_value = self.cell_expectations.insert(identifier, expectation);
         assert_eq!(prev_value, None);
     }
+    pub fn multiply(
+        &self, other: &CellExpectationCombo
+    ) -> Option<CellExpectationCombo> {
+        let mut combined_expectations = self.cell_expectations.clone();
+        for (identifier, expectation) in &other.cell_expectations {
+            let prev_value = combined_expectations.insert(
+                identifier.clone(), expectation.clone()
+            );
+            assert_eq!(
+                prev_value, None,
+                "Cannot combine CellExpectationCombos with overlapping expectations"
+            );
+        }
+        CellExpectationCombo {
+            cell_expectations: combined_expectations
+        }
+    })
 }
 impl Hash for CellExpectationCombo {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
@@ -257,6 +292,7 @@ impl Tape {
 
             combinations.insert(combination);
         }
+
         combinations
     }
 }
