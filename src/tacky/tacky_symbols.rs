@@ -306,6 +306,8 @@ impl AnnotationStartInstruction {
     pub fn new(
         label: Identifier, pop_context: Option<PoppedTokenContext>
     ) -> AnnotationStartInstruction {
+        // TODO: use this in places where we convert AST to a block
+        //  of multiple Tacky instructions
         AnnotationStartInstruction {
             label, pop_context
         }
