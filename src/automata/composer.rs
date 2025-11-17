@@ -150,10 +150,10 @@ impl CellExpectationCombo {
                 "Cannot combine CellExpectationCombos with overlapping expectations"
             );
         }
-        CellExpectationCombo {
+        Some(CellExpectationCombo {
             cell_expectations: combined_expectations
-        }
-    })
+        })
+    }
 }
 impl Hash for CellExpectationCombo {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
