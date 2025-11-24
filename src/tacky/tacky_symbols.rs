@@ -1,4 +1,3 @@
-use std::fmt::format;
 use std::hash::{Hash, Hasher};
 use crate::asm_gen::asm_symbols::TAB;
 use crate::parser::parse::{
@@ -6,6 +5,7 @@ use crate::parser::parse::{
     ASTConstant, parse_from_filepath, SupportedBinaryOperators
 };
 use crate::parser::parser_helpers::{ParseError, PoppedTokenContext};
+use crate::tacky::tacky_symbols::TackyInstruction::AnnotationStartInstruction;
 
 pub trait ToTackyInstruction: Sized {
     fn to_tacky_instruction(&self) -> TackyInstruction;
@@ -58,6 +58,25 @@ impl UnrollResult {
             instructions,
             value,
             next_free_var_id
+        }
+    }
+
+    pub fn with_annotation(
+        &self, annotation: AnnotationStartInstruction
+    ) -> Self {
+        let mut new_instructions = vec![];
+        new_instructions.push(
+            annotation.to_tacky_instruction()
+        );
+        new_instructions.extend(self.instructions.clone());
+        new_instructions.push(AnnotationEndInstruction::new(
+            annotation.label.clone(), annotation.pop_context.clone()
+        ).to_tacky_instruction());
+
+        UnrollResult {
+            instructions: new_instructions,
+            value: self.value.clone(),
+            next_free_var_id: self.next_free_var_id
         }
     }
 }
@@ -483,7 +502,10 @@ impl TackyInstruction {
         expr_item: ExpressionVariant,
         var_counter: u64
     ) -> UnrollResult {
-        match expr_item {
+        let annotation = AnnotationStartInstruction::new(
+            Identifier::new(format!("AST_EXPR_{:?}", var_counter))
+        );
+        let unroll_result = match expr_item {
             ExpressionVariant::Constant(ast_constant) => {
                 UnrollResult::new(
                     Vec::new(),
@@ -567,7 +589,8 @@ impl TackyInstruction {
                 let inner_variant = sub_expr.expr_item;
                 Self::unroll_expression(inner_variant, var_counter)
             }
-        }
+        };
+        unroll_result
     }
 }
 impl PrintableTacky for TackyInstruction {

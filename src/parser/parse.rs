@@ -184,6 +184,18 @@ pub enum ExpressionVariant {
     ParensWrapped(Box<Expression>),
     BinaryOperation(SupportedBinaryOperators, Box<Expression>, Box<Expression>)
 }
+impl ExpressionVariant {
+    pub fn get_pop_context(&self) -> Option<PoppedTokenContext> {
+        match self {
+            ExpressionVariant::Constant(constant) => constant.pop_context.clone(),
+            ExpressionVariant::UnaryOperation(_, expr) => expr.pop_context.clone(),
+            ExpressionVariant::ParensWrapped(expr) => expr.pop_context.clone(),
+            ExpressionVariant::BinaryOperation(_, left_expr, right_expr) => {
+                todo!()
+            }
+        }
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct Expression {
