@@ -270,14 +270,17 @@ impl PseudoRegister {
     }
 }
 
+#[derive(Clone, Debug)]
 pub struct AsmCompareInstruction {
     pub left: AsmOperand,
     pub right: AsmOperand,
 }
+#[derive(Clone, Debug)]
 pub struct AsmJumpInstruction {
     identifier: Identifier
 }
 
+#[derive(Clone, Debug)]
 pub enum ConditionalCompareTypes {
     Equal,
     NotEqual,
@@ -286,10 +289,12 @@ pub enum ConditionalCompareTypes {
     LessThan,
     LessThanOrEqual,
 }
+#[derive(Clone, Debug)]
 pub struct AsmJumpConditionalInstruction {
     identifier: Identifier,
     condition: ConditionalCompareTypes
 }
+#[derive(Clone, Debug)]
 pub struct AsmSetConditionalInstruction {
     destination: AsmOperand,
     condition: ConditionalCompareTypes
@@ -303,7 +308,11 @@ pub enum AsmInstruction {
     Mov(MovInstruction),
     Unary(AsmUnaryInstruction),
     Binary(AsmBinaryInstruction),
-    IntegerDivision(AsmIntegerDivision),
+    Compare(AsmCompareInstruction),
+    IntegerDivision(AsmIntegerDivision), // CDQ in textbook
+    Jump(AsmJumpInstruction),
+    JumpConditional(AsmJumpConditionalInstruction),
+    SetConditional(AsmSetConditionalInstruction),
     SignExtension,
     AllocateStack(StackAllocation),
     Ret,
@@ -336,11 +345,10 @@ impl AsmSymbol for AsmInstruction {
                 code.push_str("ret\n");
                 Ok(code.to_string())
             },
-            _ => {
-                Err(AsmGenError::InvalidInstructionType(
-                    format!("Unsupported AsmInstruction: {:?}", self)
-                ))
-            }
+            AsmInstruction::Compare(_) => {},
+            AsmInstruction::Jump(_) => {},
+            AsmInstruction::JumpConditional(_) => {},
+            AsmInstruction::SetConditional(_) => {}
         }
     }
 }
@@ -437,6 +445,50 @@ impl ToStackAllocated for AsmInstruction {
                 // Return does not affect stack allocations
                 (self.clone(), StackAllocationResult::new(stack_value))
             },
+            AsmInstruction::Compare(cmp_instruction) => {
+                let (left, left_alloc_result) =
+                    cmp_instruction.left.to_stack_allocated(stack_value, allocations);
+                let stack_value = left_alloc_result.new_stack_value;
+                let (right, right_alloc_result) =
+                    cmp_instruction.right.to_stack_allocated(stack_value, allocations);
+                let stack_value = right_alloc_result.new_stack_value;
+
+                let new_cmp_instruction = AsmCompareInstruction { left, right };
+                let mut alloc_buffer = BufferedHashMap::new(allocations);
+                alloc_buffer.apply_changes(left_alloc_result.new_stack_allocations).unwrap();
+                alloc_buffer.apply_changes(right_alloc_result.new_stack_allocations).unwrap();
+
+                let alloc_result = StackAllocationResult::new_from_buffered(
+                    stack_value, alloc_buffer
+                );
+                (AsmInstruction::Compare(new_cmp_instruction), alloc_result)
+            }
+            AsmInstruction::Jump(_jump_instruction) => {
+                // Jump does not affect stack allocations
+                (self.clone(), StackAllocationResult::new(stack_value))
+            }
+            AsmInstruction::JumpConditional(_cond_jump_instruction) => {
+                // Jump conditional does not affect stack allocations
+                (self.clone(), StackAllocationResult::new(stack_value))
+            }
+            AsmInstruction::SetConditional(set_cond_instruction) => {
+                let (destination, dest_alloc_result) =
+                    set_cond_instruction.destination.to_stack_allocated(
+                        stack_value, allocations
+                    );
+                let stack_value = dest_alloc_result.new_stack_value;
+
+                let new_set_conditional_instruction = AsmSetConditionalInstruction {
+                    destination,
+                    condition: set_cond_instruction.condition.clone(),
+                };
+                let mut alloc_buffer = BufferedHashMap::new(allocations);
+                alloc_buffer.apply_changes(dest_alloc_result.new_stack_allocations).unwrap();
+                let alloc_result = StackAllocationResult::new_from_buffered(
+                    stack_value, alloc_buffer
+                );
+                (AsmInstruction::SetConditional(new_set_conditional_instruction), alloc_result)
+            }
         }
     }
 }

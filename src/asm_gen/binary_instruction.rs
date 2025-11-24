@@ -83,18 +83,18 @@ impl AsmBinaryInstruction {
 
     pub fn unpack_from_tacky(binary_instruction: BinaryInstruction) -> Vec<AsmInstruction> {
         /*
-      TACKY:
-      ----------------------------
-      Binary(op, src1, src2, dst)
-      ----------------------------
-      ASM:
-      ----------------------------
-      Mov(src1, dst)
-      Binary(op, src2, dst)
+        TACKY:
+        ----------------------------
+        Binary(op, src1, src2, dst)
+        ----------------------------
+        ASM:
+        ----------------------------
+        Mov(src1, dst)
+        Binary(op, src2, dst)
 
-      ASM instruction applies op to dst using src2
-      and stores result in dst
-      */
+        ASM instruction applies op to dst using src2
+        and stores result in dst
+        */
         let left_operand = AsmOperand::from_tacky_value(binary_instruction.left);
         let right_operand = AsmOperand::from_tacky_value(binary_instruction.right.clone());
         let dst_operand = AsmOperand::from_tacky_value(
