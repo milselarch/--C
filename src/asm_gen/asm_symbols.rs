@@ -1,9 +1,6 @@
 use std::collections::HashMap;
 use std::fmt::format;
-use crate::parser::parse::{
-    Expression, ExpressionVariant, Statement,
-    SupportedBinaryOperators, SupportedUnaryOperators
-};
+use crate::parser::parse::{Expression, ExpressionVariant, Identifier, Statement, SupportedBinaryOperators, SupportedUnaryOperators};
 use helpers::ToStackAllocated;
 use crate::asm_gen::binary_instruction::{AsmBinaryInstruction, AsmBinaryOperators};
 use crate::asm_gen::helpers;
@@ -271,6 +268,34 @@ impl PseudoRegister {
         pseudo_register.set_tacky_var(cloned_var);
         pseudo_register
     }
+}
+
+pub struct AsmCompareInstruction {
+    pub left: AsmOperand,
+    pub right: AsmOperand,
+}
+pub struct AsmJumpInstruction {
+    identifier: Identifier
+}
+
+pub enum ConditionalCompareTypes {
+    Equal,
+    NotEqual,
+    GreaterThan,
+    GreaterThanOrEqual,
+    LessThan,
+    LessThanOrEqual,
+}
+pub struct AsmJumpConditionalInstruction {
+    identifier: Identifier,
+    condition: ConditionalCompareTypes
+}
+pub struct AsmSetConditionalInstruction {
+    destination: AsmOperand,
+    condition: ConditionalCompareTypes
+}
+pub struct AsmLabel {
+    identifier: Identifier
 }
 
 #[derive(Clone, Debug)]

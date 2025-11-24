@@ -5,7 +5,6 @@ use crate::parser::parse::{
     ASTConstant, parse_from_filepath, SupportedBinaryOperators
 };
 use crate::parser::parser_helpers::{ParseError, PoppedTokenContext};
-use crate::tacky::tacky_symbols::TackyInstruction::AnnotationStartInstruction;
 
 pub trait ToTackyInstruction: Sized {
     fn to_tacky_instruction(&self) -> TackyInstruction;
@@ -376,6 +375,7 @@ impl ToTackyInstruction for TackyInstruction {
         self.clone()
     }
 }
+
 impl TackyInstruction {
     pub fn unroll_short_circuit(
         left: ExpressionVariant,
@@ -502,16 +502,19 @@ impl TackyInstruction {
         expr_item: ExpressionVariant,
         var_counter: u64
     ) -> UnrollResult {
-        let annotation = AnnotationStartInstruction::new(
-            Identifier::new(format!("AST_EXPR_{:?}", var_counter))
-        );
+        let annotation_identifier =
+            Identifier::new(format!("EXPR_UNROLL_{}", var_counter));
+
         let unroll_result = match expr_item {
             ExpressionVariant::Constant(ast_constant) => {
                 UnrollResult::new(
                     Vec::new(),
                     TackyValue::Constant(ast_constant.clone()),
                     var_counter
-                )
+                ).with_annotation(AnnotationStartInstruction::new(
+                    annotation_identifier,
+                    ast_constant.pop_context
+                ))
             },
             ExpressionVariant::UnaryOperation(
                 operator, sub_expr
@@ -540,9 +543,27 @@ impl TackyInstruction {
                     instructions,
                     TackyValue::Var(new_var),
                     var_counter
-                )
+                ).with_annotation(AnnotationStartInstruction::new(
+                    annotation_identifier,
+                    sub_expr.pop_context.clone()
+                ))
             }
-            ExpressionVariant::BinaryOperation(operator, left, right) => {
+            ExpressionVariant::BinaryOperation(
+                operator, left, right
+            ) => {
+                let bin_pop_context = if let (
+                    Some(left_ctx), Some(right_ctx)
+                ) = (&left.pop_context, &right.pop_context) {
+                    // both sides have pop contexts, merge them
+                    Some(left_ctx | right_ctx)
+                } else if let Some(left_ctx) = &left.pop_context {
+                    Some(left_ctx.clone())
+                } else if let Some(right_ctx) = &right.pop_context {
+                    Some(right_ctx.clone())
+                } else {
+                    None
+                };
+
                 if operator.is_short_circuit() {
                     return Self::unroll_short_circuit(
                         left.expr_item.clone(),
@@ -570,7 +591,7 @@ impl TackyInstruction {
                     left: left_unroll.value,
                     right: right_unroll.value,
                     dst: new_var.clone(),
-                    pop_context: right.pop_context.clone()
+                    pop_context: None
                 };
 
                 let left_instructions = left_unroll.instructions;
@@ -583,7 +604,10 @@ impl TackyInstruction {
                     instructions,
                     TackyValue::Var(new_var),
                     var_counter
-                )
+                ).with_annotation(AnnotationStartInstruction::new(
+                    annotation_identifier,
+                    bin_pop_context
+                ))
             }
             ExpressionVariant::ParensWrapped(sub_expr) => {
                 let inner_variant = sub_expr.expr_item;
