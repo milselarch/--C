@@ -22,6 +22,9 @@ impl TackyVariable {
     pub fn new(id: u64) -> TackyVariable {
         TackyVariable { id, name: "".to_string() }
     }
+    pub fn to_tacky_value(&self) -> TackyValue {
+        TackyValue::Var(self.clone())
+    }
 }
 impl Eq for TackyVariable {}
 impl PartialEq for TackyVariable {
@@ -203,8 +206,8 @@ impl PrintableTacky for BinaryInstruction {
 
 #[derive(Clone, Debug)]
 pub struct CopyInstruction {
-    pub src: TackyValue,
-    pub dst: TackyVariable,
+    pub src: TackyValue, // constant or variable
+    pub dst: TackyVariable, // variable only
     pub pop_context: Option<PoppedTokenContext>
 }
 impl CopyInstruction {

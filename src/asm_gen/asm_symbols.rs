@@ -10,7 +10,7 @@ use crate::asm_gen::helpers::{
 use crate::asm_gen::interger_division::AsmIntegerDivision;
 use crate::asm_gen::unary_instruction::AsmUnaryInstruction;
 use crate::parser::parser_helpers::{ParseError, PoppedTokenContext};
-use crate::tacky::tacky_symbols::{tacky_gen_from_filepath, BinaryInstruction, TackyFunction, TackyInstruction, TackyProgram, TackyValue, TackyVariable};
+use crate::tacky::tacky_symbols::{tacky_gen_from_filepath, BinaryInstruction, LabelInstruction, TackyFunction, TackyInstruction, TackyProgram, TackyValue, TackyVariable};
 
 const STACK_VARIABLE_SIZE: u64 = 4; // bytes
 pub const TAB: &str = "    ";
@@ -315,6 +315,7 @@ pub enum AsmInstruction {
     SetConditional(AsmSetConditionalInstruction),
     SignExtension,
     AllocateStack(StackAllocation),
+    LabelInstruction(AsmLabelInstruction),
     Ret,
 }
 impl AsmSymbol for AsmInstruction {
@@ -345,10 +346,14 @@ impl AsmSymbol for AsmInstruction {
                 code.push_str("ret\n");
                 Ok(code.to_string())
             },
-            AsmInstruction::Compare(_) => {},
-            AsmInstruction::Jump(_) => {},
-            AsmInstruction::JumpConditional(_) => {},
-            AsmInstruction::SetConditional(_) => {}
+            _ => {
+                Err(AsmGenError::InvalidInstructionType(
+                    format!(
+                        "AsmInstruction variant not implemented for to_asm_code: {:?}",
+                        self
+                    )
+                ))
+            }
         }
     }
 }
@@ -397,12 +402,25 @@ impl AsmInstruction {
             TackyInstruction::BinaryInstruction(binary_instruction) => {
                 AsmBinaryInstruction::unpack_from_tacky(binary_instruction)
             },
-            _ => {
-                panic!(
-                    "Unsupported TackyInstruction for AsmInstruction conversion: {:?}",
-                    tacky_instruction
-                );
+            TackyInstruction::LabelInstruction(label_instruction) => {
+                AsmLabelInstruction::unpack_from_tacky(label_instruction)
             }
+            TackyInstruction::CopyInstruction(copy_instruction) => {
+                let src_operand =
+                    AsmOperand::from_tacky_value(copy_instruction.src);
+                let dst_operand =
+                    AsmOperand::from_tacky_value(copy_instruction.dst.to_tacky_value());
+
+                let asm_mov_instruction = MovInstruction::new(src_operand, dst_operand);
+                vec![AsmInstruction::Mov(asm_mov_instruction)]
+            }
+            TackyInstruction::JumpInstruction(jump_instruction) => {
+                
+            },
+            TackyInstruction::JumpIfZeroInstruction(_) => {}
+            TackyInstruction::JumpIfNotZeroInstruction(_) => {}
+            TackyInstruction::AnnotationStartInstruction(_) => {}
+            TackyInstruction::AnnotationEndInstruction(_) => {}
         }
     }
 }
@@ -446,6 +464,7 @@ impl ToStackAllocated for AsmInstruction {
                 (self.clone(), StackAllocationResult::new(stack_value))
             },
             AsmInstruction::Compare(cmp_instruction) => {
+                // TODO: refactor this out to its own ToStackAllocated impl
                 let (left, left_alloc_result) =
                     cmp_instruction.left.to_stack_allocated(stack_value, allocations);
                 let stack_value = left_alloc_result.new_stack_value;
@@ -472,6 +491,7 @@ impl ToStackAllocated for AsmInstruction {
                 (self.clone(), StackAllocationResult::new(stack_value))
             }
             AsmInstruction::SetConditional(set_cond_instruction) => {
+                // TODO: refactor this out to its own ToStackAllocated impl
                 let (destination, dest_alloc_result) =
                     set_cond_instruction.destination.to_stack_allocated(
                         stack_value, allocations
@@ -490,6 +510,22 @@ impl ToStackAllocated for AsmInstruction {
                 (AsmInstruction::SetConditional(new_set_conditional_instruction), alloc_result)
             }
         }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct AsmLabelInstruction {
+    pub identifier: Identifier
+}
+impl AsmLabelInstruction {
+    pub fn new(identifier: Identifier) -> Self {
+        AsmLabelInstruction { identifier }
+    }
+    pub fn unpack_from_tacky(
+        label_instruction: LabelInstruction
+    ) -> Vec<AsmInstruction> {
+        let label_instruction = AsmLabelInstruction::new(label_instruction.label);
+        vec![AsmInstruction::LabelInstruction(label_instruction)]
     }
 }
 
