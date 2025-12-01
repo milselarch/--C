@@ -1,24 +1,19 @@
 use std::collections::HashMap;
 use crate::parser::parse::{Expression, ExpressionVariant, Identifier, Statement};
 use helpers::ToStackAllocated;
+use crate::constants::{STACK_VARIABLE_SIZE, TAB};
 use crate::asm_gen::binary_instruction::{AsmBinaryInstruction};
+use crate::asm_gen::cmp_instruction::{AsmCompareInstruction, AsmJumpConditionalInstruction, AsmSetConditionalInstruction, ConditionalCompareTypes};
 use crate::asm_gen::helpers;
 use crate::asm_gen::helpers::{
     AppendOnlyHashMap, BufferedHashMap, DiffableHashMap, StackAllocationResult
 };
-use crate::asm_gen::interger_division::AsmIntegerDivision;
+use crate::asm_gen::registers::{BASE_REGISTER, STACK_REGISTER};
+use crate::asm_gen::integer_division::AsmIntegerDivision;
+use crate::asm_gen::mov_instruction::MovInstruction;
 use crate::asm_gen::unary_instruction::AsmUnaryInstruction;
 use crate::parser::parser_helpers::{ParseError, PoppedTokenContext};
 use crate::tacky::tacky_symbols::{tacky_gen_from_filepath, JumpInstruction, LabelInstruction, TackyFunction, TackyInstruction, TackyProgram, TackyValue, TackyVariable};
-
-const STACK_VARIABLE_SIZE: u64 = 4; // bytes
-pub const TAB: &str = "    ";
-pub const SCRATCH_REGISTER: &str = "%r10d";
-pub const MUL_SCRATCH_REGISTER: &str = "%r11d";
-const STACK_REGISTER: &str = "%rsp";
-// base of current stack frame
-const BASE_REGISTER: &str = "%rbp";
-
 
 #[derive(Debug)]
 pub enum AsmGenError {
@@ -267,48 +262,6 @@ impl PseudoRegister {
         pseudo_register.set_tacky_var(cloned_var);
         pseudo_register
     }
-}
-
-#[derive(Clone, Debug)]
-pub struct AsmCompareInstruction {
-    pub left: AsmOperand,
-    pub right: AsmOperand,
-}
-impl AsmCompareInstruction {
-    pub fn new(left: AsmOperand, right: AsmOperand) -> Self {
-        AsmCompareInstruction { left, right }
-    }
-}
-
-#[derive(Clone, Debug)]
-pub enum ConditionalCompareTypes {
-    Equal,
-    NotEqual,
-    GreaterThan,
-    GreaterThanOrEqual,
-    LessThan,
-    LessThanOrEqual,
-}
-#[derive(Clone, Debug)]
-pub struct AsmJumpConditionalInstruction {
-    identifier: Identifier,
-    condition: ConditionalCompareTypes
-}
-impl AsmJumpConditionalInstruction {
-    pub fn new(
-        identifier: Identifier,
-        condition: ConditionalCompareTypes
-    ) -> Self {
-        AsmJumpConditionalInstruction {
-            identifier,
-            condition
-        }
-    }
-}
-#[derive(Clone, Debug)]
-pub struct AsmSetConditionalInstruction {
-    destination: AsmOperand,
-    condition: ConditionalCompareTypes
 }
 
 #[derive(Clone, Debug)]
@@ -613,69 +566,6 @@ impl AsmJumpInstruction {
     ) -> Vec<AsmInstruction> {
         let asm_jump_instruction = AsmJumpInstruction::new(jump_instruction.target);
         vec![AsmInstruction::Jump(asm_jump_instruction)]
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct MovInstruction {
-    pub(crate) source: AsmOperand,
-    pub(crate) destination: AsmOperand,
-}
-impl MovInstruction {
-    pub fn new(source: AsmOperand, destination: AsmOperand) -> Self {
-        MovInstruction { source, destination }
-    }
-}
-impl AsmSymbol for MovInstruction {
-    fn to_asm_code(self) -> Result<String, AsmGenError> {
-        let is_src_stack_addr = self.source.is_stack_address();
-        let is_src_constant = self.source.is_constant();
-        let is_dst_stack_addr = self.destination.is_stack_address();
-        println!("MOV_PRE {}", format!("{:?}, {:?}", &self.source, &self.destination));
-
-        let src_asm = self.source.to_asm_code()?;
-        let dst_asm = self.destination.to_asm_code()?;
-
-        if (is_src_stack_addr || is_src_constant) && is_dst_stack_addr {
-            /*
-            Apparently moving stack allocated values and constants
-            directly to stack addresses is not allowed in x86-64 assembly.
-            So we move the value to a scratch register first,
-            then move it to the stack address.
-            */
-            let mut asm_code: String = String::new();
-            asm_code.push_str(&format!("movl {src_asm}, {SCRATCH_REGISTER}\n"));
-            asm_code.push_str(&format!("movl {SCRATCH_REGISTER}, {dst_asm}"));
-            Ok(asm_code)
-        } else {
-            Ok(format!("mov {}, {}", src_asm, dst_asm))
-        }
-    }
-}
-impl ToStackAllocated for MovInstruction {
-    fn to_stack_allocated(
-        &self, stack_value: u64,
-        allocations: &dyn DiffableHashMap<u64, u64>
-    ) -> (Self, StackAllocationResult) {
-        let mut alloc_buffer = BufferedHashMap::new(allocations);
-
-        let (source, src_alloc_result) =
-            self.source.to_stack_allocated(stack_value, alloc_buffer.get_source_ref());
-        let stack_value = src_alloc_result.new_stack_value;
-        alloc_buffer.apply_changes(src_alloc_result.new_stack_allocations).unwrap();
-
-        let (destination, dst_alloc_result) =
-            self.destination.to_stack_allocated(stack_value, alloc_buffer.get_source_ref());
-        let stack_value = dst_alloc_result.new_stack_value;
-        alloc_buffer.apply_changes(dst_alloc_result.new_stack_allocations).unwrap();
-
-        let new_instruction = MovInstruction { source, destination };
-        let alloc_result = StackAllocationResult::new_with_allocations(
-            stack_value,
-            alloc_buffer.build_changes().to_hash_map()
-        );
-
-        (new_instruction, alloc_result)
     }
 }
 

@@ -1,5 +1,5 @@
 use std::hash::{Hash, Hasher};
-use crate::asm_gen::asm_symbols::TAB;
+use crate::constants::TAB;
 use crate::parser::parse::{
     Identifier, ASTProgram, SupportedUnaryOperators, ASTFunction, ExpressionVariant,
     ASTConstant, parse_from_filepath, SupportedBinaryOperators

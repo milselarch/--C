@@ -1,16 +1,15 @@
 use std::cmp::PartialEq;
 use crate::asm_gen::asm_symbols::{
-    SCRATCH_REGISTER, MUL_SCRATCH_REGISTER
-};
-use crate::asm_gen::asm_symbols::{
     AsmGenError, AsmInstruction, AsmOperand, AsmSymbol,
-    MovInstruction, Register
+    Register
 };
+use crate::asm_gen::registers::{MUL_SCRATCH_REGISTER, SCRATCH_REGISTER};
 use crate::asm_gen::helpers::{
     BufferedHashMap, DiffableHashMap, StackAllocationResult,
     ToStackAllocated
 };
-use crate::asm_gen::interger_division::AsmIntegerDivision;
+use crate::asm_gen::integer_division::AsmIntegerDivision;
+use crate::asm_gen::mov_instruction::MovInstruction;
 use crate::parser::parse::SupportedBinaryOperators;
 use crate::tacky::tacky_symbols::{BinaryInstruction, TackyValue};
 
