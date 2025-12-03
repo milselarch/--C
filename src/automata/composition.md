@@ -32,3 +32,6 @@ Plan to compose a multi-tape automata into a single-tape automata
        equations for the corresponding state in the single-tape 
        automata - of course dependent states in the equations will 
        also have to be remapped, but structurally the equations will be the same.
+4. Neighbors map generation
+   1. Start with the input tape
+   2. We consider all combinations of VOID and input states

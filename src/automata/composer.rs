@@ -18,7 +18,7 @@ const VOID_STATE: u32 = 0;
 pub fn get_cell_expectation_combo_product(
     expectations1: &HashSet<CellExpectationCombo>,
     expectations2: &HashSet<CellExpectationCombo>,
-) -> HashSet<CellExpectationCombo> {
+) -> Result<HashSet<CellExpectationCombo>, MultiplyComboConflict> {
     /*
     Returns the Cartesian product of two sets of cell expectation combos
     */
@@ -26,11 +26,17 @@ pub fn get_cell_expectation_combo_product(
 
     for combo1 in expectations1 {
         for combo2 in expectations2 {
-            todo!()
+            let product_res = combo1.multiply(combo2);
+            let product_combo = match product_res {
+                Ok(combo) => combo,
+                Err(_conflict) => {
+                    return Err(_conflict);
+                }
+            };
+            product_combos.insert(product_combo);
         }
     }
-
-    product_combos
+    Ok(product_combos)
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd, Sequence)]
@@ -390,7 +396,7 @@ impl MultiTape {
         };
 
         self.tape_names_map.insert(name, tape_key.clone());
-        return tape_key;
+        tape_key
     }
 
     pub fn get_tape_by_key(&self, tape_key: &TapeKey) -> Option<&Tape> {
