@@ -1,6 +1,7 @@
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
+use std::ops::Mul;
 use enum_iterator::Sequence;
 
 /*
@@ -111,6 +112,30 @@ impl TapeCellIdentifier {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MultiplyComboConflict {
+    /*
+    Represents a conflict when multiplying two
+    CellExpectationCombos
+    */
+    conflicting_identifier: TapeCellIdentifier,
+    expectation_a: CellExpectation,
+    expectation_b: CellExpectation,
+}
+impl MultiplyComboConflict {
+    pub fn new(
+        conflicting_identifier: TapeCellIdentifier,
+        expectation_a: CellExpectation,
+        expectation_b: CellExpectation,
+    ) -> MultiplyComboConflict {
+        MultiplyComboConflict {
+            conflicting_identifier,
+            expectation_a,
+            expectation_b,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CellExpectationCombo {
     /*
     Represents the expectation that a bunch of adjacent cells
@@ -139,18 +164,23 @@ impl CellExpectationCombo {
     }
     pub fn multiply(
         &self, other: &CellExpectationCombo
-    ) -> Option<CellExpectationCombo> {
+    ) -> Result<CellExpectationCombo, MultiplyComboConflict> {
         let mut combined_expectations = self.cell_expectations.clone();
         for (identifier, expectation) in &other.cell_expectations {
             let prev_value = combined_expectations.insert(
                 identifier.clone(), expectation.clone()
             );
-            assert_eq!(
-                prev_value, None,
-                "Cannot combine CellExpectationCombos with overlapping expectations"
-            );
+
+            if let Some(existing_expectation) = prev_value {
+                // conflict detected
+                return Err(MultiplyComboConflict::new(
+                    identifier.clone(),
+                    existing_expectation,
+                    expectation.clone(),
+                ));
+            }
         }
-        Some(CellExpectationCombo {
+        Ok(CellExpectationCombo {
             cell_expectations: combined_expectations
         })
     }
@@ -163,6 +193,13 @@ impl Hash for CellExpectationCombo {
         for expectation in expectations_vec {
             expectation.hash(state);
         }
+    }
+}
+impl Mul for CellExpectationCombo {
+    type Output = Result<CellExpectationCombo, MultiplyComboConflict>;
+
+    fn mul(self, rhs: Self) -> Self::Output {
+        self.multiply(&rhs)
     }
 }
 

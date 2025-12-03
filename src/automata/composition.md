@@ -4,12 +4,15 @@ Plan to compose a multi-tape automata into a single-tape automata
     1. we have n read-only tapes and m write-only tapes
     2. The input value has scoped as a predefined set of states that 
        go into one of the input read-only tapes
-    3. cells in the read-only tape cannot transition unless there 
+    3. There can never be a gap in the input read-only tape
+       i.e. the input read-only tape must always contain exactly 1 contiguous
+       block of non-void cells, and the rest are void cells
+    4. cells in the read-only tape cannot transition unless there 
        is a rule involving non-void cells in the write tape
-    4. non-void cells in a write-tape can cause a 
+    5. non-void cells in a write-tape can cause a 
        transition to themselves and read-only tapes
-    5. a write-only tape cannot write to another write-only tape
-    6. a read tape can only be written to by at most one write tape
+    6. a write-only tape cannot write to another write-only tape
+    7. a read tape can only be written to by at most one write tape
 2. generation of rules for the multi-tape cellular automata
     1. for every write tape W that writes to a read tape R
         1. for every possible combination of cells CW in W 
