@@ -3,7 +3,7 @@ use crate::asm_gen::asm_symbols::{
     AsmGenError, AsmInstruction, AsmOperand, AsmSymbol,
     Register
 };
-use crate::asm_gen::registers::{MUL_SCRATCH_REGISTER, SCRATCH_REGISTER};
+use crate::asm_gen::registers::{DST_SCRATCH_REGISTER, SCRATCH_REGISTER};
 use crate::asm_gen::helpers::{
     BufferedHashMap, DiffableHashMap, StackAllocationResult,
     ToStackAllocated
@@ -163,18 +163,22 @@ impl ToStackAllocated for AsmBinaryInstruction {
 }
 
 fn generate_multiply_asm(src_asm: String, dst_asm: String) -> String {
+    /*
+    multiplication operations in x86-64 assembly will
+    modify the destination operand inplace.
+    */
     let mut asm_code: String = String::new();
     // move destination to multiply scratch register first
-    asm_code.push_str(&format!("movl {dst_asm}, {MUL_SCRATCH_REGISTER}\n"));
+    asm_code.push_str(&format!("movl {dst_asm}, {DST_SCRATCH_REGISTER}\n"));
 
     let operator_asm = AsmBinaryOperators::Multiply.to_asm_string();
     asm_code.push_str(&format!(
         "{} {}, {}\n",
-        operator_asm, src_asm, MUL_SCRATCH_REGISTER
+        operator_asm, src_asm, DST_SCRATCH_REGISTER
     ));
 
     // move multiply scratch register (modified inplace) back to destination
-    asm_code.push_str(&format!("movl {MUL_SCRATCH_REGISTER}, {dst_asm}"));
+    asm_code.push_str(&format!("movl {DST_SCRATCH_REGISTER}, {dst_asm}"));
     asm_code
 }
 
@@ -201,9 +205,9 @@ impl AsmSymbol for AsmBinaryInstruction {
             asm_code.push_str(&format!("movl {src_asm}, {SCRATCH_REGISTER}\n"));
 
             if self.operator == AsmBinaryOperators::Multiply {
-                asm_code.push_str(&*generate_multiply_asm(
+                asm_code.push_str(generate_multiply_asm(
                     SCRATCH_REGISTER.to_string(), dst_asm
-                ))
+                ).as_str())
             } else {
                 asm_code.push_str(&format!(
                     "{} {}, {}",

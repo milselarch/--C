@@ -19,7 +19,7 @@ impl AsmSymbol for MovInstruction {
         let is_src_stack_addr = self.source.is_stack_address();
         let is_src_constant = self.source.is_constant();
         let is_dst_stack_addr = self.destination.is_stack_address();
-        println!("MOV_PRE {}", format!("{:?}, {:?}", &self.source, &self.destination));
+        // println!("MOV_PRE {}", format!("{:?}, {:?}", &self.source, &self.destination));
 
         let src_asm = self.source.to_asm_code()?;
         let dst_asm = self.destination.to_asm_code()?;
@@ -28,6 +28,7 @@ impl AsmSymbol for MovInstruction {
             /*
             Apparently moving stack allocated values and constants
             directly to stack addresses is not allowed in x86-64 assembly.
+
             So we move the value to a scratch register first,
             then move it to the stack address.
             */

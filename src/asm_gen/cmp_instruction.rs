@@ -1,3 +1,4 @@
+use crate::asm_gen::registers::{SCRATCH_REGISTER, DST_SCRATCH_REGISTER};
 use crate::asm_gen::asm_symbols::AsmSymbol;
 use crate::asm_gen::asm_symbols::AsmOperand;
 use crate::parser::parse::Identifier;
@@ -25,10 +26,40 @@ impl AsmCompareInstruction {
 }
 impl AsmSymbol for AsmCompareInstruction {
     fn to_asm_code(self) -> Result<String, crate::asm_gen::asm_symbols::AsmGenError> {
-        // TODO: handle stack allocation like for mov
+        let is_left_stack_addr = self.left.is_stack_address();
+        let is_right_stack_addr = self.right.is_stack_address();
+        let is_right_constant = self.right.is_constant();
+
         let left_asm = self.left.to_asm_code()?;
         let right_asm = self.right.to_asm_code()?;
-        Ok(format!("cmp {}, {}", left_asm, right_asm))
+
+        if is_left_stack_addr && is_right_stack_addr {
+            /*
+            Apparently directly comparing one stack allocated value
+            to another stack allocated value is not allowed in x86-64 assembly.
+
+            So we move the left value to a scratch register first,
+            then compare it to the right stack address.
+            */
+            let mut asm_code: String = String::new();
+            asm_code.push_str(&format!("movl {left_asm}, {SCRATCH_REGISTER}\n"));
+            asm_code.push_str(&format!("cmpl {SCRATCH_REGISTER}, {right_asm}"));
+            Ok(asm_code)
+        } else if is_right_constant {
+            /*
+            Apparently directly comparing a stack allocated value
+            to a constant is not allowed in x86-64 assembly.
+
+            So we move the constant to a scratch register first,
+            then compare it to the left operand.
+            */
+            let mut asm_code: String = String::new();
+            asm_code.push_str(&format!("movl {right_asm}, {DST_SCRATCH_REGISTER}\n"));
+            asm_code.push_str(&format!("cmpl {left_asm}, {DST_SCRATCH_REGISTER}"));
+            Ok(asm_code)
+        } else {
+            Ok(format!("cmpl {}, {}", left_asm, right_asm))
+        }
     }
 }
 #[derive(Clone, Debug)]
