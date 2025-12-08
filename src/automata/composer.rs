@@ -1,8 +1,9 @@
-use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 use std::ops::Mul;
 use enum_iterator::Sequence;
+
+type TapeKey = usize;
 
 /*
 TODO:
@@ -46,19 +47,6 @@ pub enum Direction {
     Middle,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Hash, PartialOrd, Ord)]
-pub struct WritableTapeKey {
-    tape_index: usize,
-}
-#[derive(Clone, Debug, Eq, PartialEq, Hash, PartialOrd, Ord)]
-pub struct ReadableTapeKey {
-    tape_index: usize,
-}
-#[derive(Clone, Debug, Eq, PartialEq, Hash, PartialOrd, Ord)]
-pub enum TapeKey {
-    Readable(ReadableTapeKey),
-    Writable(WritableTapeKey),
-}
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, Hash)]
 pub struct TapeState {
     tape_key: TapeKey,
@@ -212,12 +200,9 @@ impl Mul for CellExpectationCombo {
 #[derive(Debug, Clone)]
 pub struct WriteRule {
     expectations: CellExpectationCombo,
-    write_tape: WritableTapeKey,
-    // cell transition to apply to own tapes cell
-    self_write_value: TapeState,
-    // cell transitions to apply to other read tape cells
+    // cell transitions to apply to other tape cells
     // at the same position
-    read_tape_write_values: Vec<(ReadableTapeKey, TapeState)>,
+    writes: Vec<(TapeKey, TapeState)>,
 }
 impl WriteRule {
     pub fn get_output_tape_keys(&self) -> HashSet<TapeKey> {
@@ -226,12 +211,9 @@ impl WriteRule {
         that this tape write rule would write to
         */
         let mut output_tape_keys = HashSet::new();
-        output_tape_keys.insert(
-            TapeKey::Writable(self.write_tape.clone())
-        );
-        for (readable_key, _) in &self.read_tape_write_values {
+        for (output_tape_key, _) in &self.writes {
             output_tape_keys.insert(
-                TapeKey::Readable(readable_key.clone())
+                output_tape_key.clone()
             );
         }
         output_tape_keys
@@ -276,15 +258,7 @@ impl Tape {
         }
     }
     pub fn get_tape_key(&self) -> TapeKey {
-        if self.self_writeable {
-            TapeKey::Writable(WritableTapeKey {
-                tape_index: self.tape_index,
-            })
-        } else {
-            TapeKey::Readable(ReadableTapeKey {
-                tape_index: self.tape_index,
-            })
-        }
+        self.tape_index
     }
 
     pub fn get_dependent_tape_keys(&self) -> HashSet<TapeKey> {
@@ -301,15 +275,7 @@ impl Tape {
         &self, tape_cell_state: u32, direction: Direction
     ) -> CellExpectation {
         let tape_state = TapeState::new(
-            if self.self_writeable {
-                TapeKey::Writable(WritableTapeKey {
-                    tape_index: self.tape_index,
-                })
-            } else {
-                TapeKey::Readable(ReadableTapeKey {
-                    tape_index: self.tape_index,
-                })
-            },
+            self.tape_index,
             tape_cell_state,
         );
         let cell_expectation = CellExpectation::new(
@@ -442,10 +408,12 @@ impl MultiTape {
         combinations within our own tape.
 
         If we are a writable tape,
-        the equations would simply be our iwb tape's write rules
+        the equations would simply be our own tape's write rules
         */
         let tape = self.get_tape_by_key(&tape_key).unwrap();
         let dependent_tape_keys = tape.get_dependent_tape_keys();
+
+
         todo!()
     }
     // TODO: a method to propagate all possible state combinations
