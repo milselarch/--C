@@ -13,25 +13,26 @@ use crate::asm_gen::mov_instruction::MovInstruction;
 use crate::parser::parse::SupportedBinaryOperators;
 use crate::tacky::tacky_symbols::{BinaryInstruction, TackyValue};
 
+// Note: only handles binary operations that can be represented in 1 line
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum AsmBinaryOperators {
+pub enum AsmDirectBinaryOperators {
     Add,
     Subtract,
     Multiply
 }
-impl AsmBinaryOperators {
+impl AsmDirectBinaryOperators {
     pub fn to_asm_string(&self) -> String {
         match self {
-            AsmBinaryOperators::Add => "addl".to_string(),
-            AsmBinaryOperators::Subtract => "subl".to_string(),
-            AsmBinaryOperators::Multiply => "imull".to_string(),
+            AsmDirectBinaryOperators::Add => "addl".to_string(),
+            AsmDirectBinaryOperators::Subtract => "subl".to_string(),
+            AsmDirectBinaryOperators::Multiply => "imull".to_string(),
         }
     }
     pub fn from_supported(op: SupportedBinaryOperators) -> Result<Self, AsmGenError> {
         match op {
-            SupportedBinaryOperators::Add => Ok(AsmBinaryOperators::Add),
-            SupportedBinaryOperators::Subtract => Ok(AsmBinaryOperators::Subtract),
-            SupportedBinaryOperators::Multiply => Ok(AsmBinaryOperators::Multiply),
+            SupportedBinaryOperators::Add => Ok(AsmDirectBinaryOperators::Add),
+            SupportedBinaryOperators::Subtract => Ok(AsmDirectBinaryOperators::Subtract),
+            SupportedBinaryOperators::Multiply => Ok(AsmDirectBinaryOperators::Multiply),
             _ => Err(AsmGenError::UnsupportedInstruction(
                 format!("Unsupported binary operator: {:?}", op))
             ),
@@ -39,15 +40,60 @@ impl AsmBinaryOperators {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub enum DivisionOutputs {
     Quotient,
     Remainder
 }
 
+#[derive(Clone, Copy, Debug)]
+pub enum ComparisonOutputs {
+    Equal,
+    NotEqual,
+    GreaterThan,
+    GreaterThanOrEqual,
+    LessThan,
+    LessThanOrEqual
+}
+impl ComparisonOutputs {
+    pub fn from_binary_operator(
+        op: SupportedBinaryOperators
+    ) -> Result<Self, AsmGenError> {
+        match op {
+            SupportedBinaryOperators::CheckEqual => Ok(ComparisonOutputs::Equal),
+            SupportedBinaryOperators::NotEqual => Ok(ComparisonOutputs::NotEqual),
+            SupportedBinaryOperators::GreaterThan => Ok(ComparisonOutputs::GreaterThan),
+            SupportedBinaryOperators::GreaterOrEqual => {
+                Ok(ComparisonOutputs::GreaterThanOrEqual)
+            }
+            SupportedBinaryOperators::LessThan => Ok(ComparisonOutputs::LessThan),
+            SupportedBinaryOperators::LessOrEqual => {
+                Ok(ComparisonOutputs::LessThanOrEqual)
+            }
+            _ => Err(AsmGenError::UnsupportedInstruction(
+                format!("Unsupported comparison output operator: {:?}", op)
+            )),
+        }
+    }
+}
+
+impl DivisionOutputs {
+    pub fn from_binary_operator(
+        op: SupportedBinaryOperators
+    ) -> Result<Self, AsmGenError> {
+        match op {
+            SupportedBinaryOperators::Divide => Ok(DivisionOutputs::Quotient),
+            SupportedBinaryOperators::Modulo => Ok(DivisionOutputs::Remainder),
+            _ => Err(AsmGenError::UnsupportedInstruction(
+                format!("Unsupported division output operator: {:?}", op)
+            )),
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct AsmBinaryInstruction {
-    pub(crate) operator: AsmBinaryOperators,
+    pub(crate) operator: AsmDirectBinaryOperators,
     pub(crate) source: AsmOperand,
     pub(crate) destination: AsmOperand,
 }
@@ -79,6 +125,14 @@ impl AsmBinaryInstruction {
             AsmInstruction::Mov(move_out_instruction)
         ]
     }
+    pub fn build_comparison_instructions(
+        left_operand: AsmOperand,
+        right_operand: AsmOperand,
+        dst_operand: AsmOperand,
+        desired_output: ComparisonOutputs
+    ) -> Vec<AsmInstruction> {
+        todo!()
+    }
 
     pub fn unpack_from_tacky(binary_instruction: BinaryInstruction) -> Vec<AsmInstruction> {
         /*
@@ -86,6 +140,35 @@ impl AsmBinaryInstruction {
         ----------------------------
         Binary(op, src1, src2, dst)
         ----------------------------
+        */
+        let operator = binary_instruction.operator;
+        let left_operand = AsmOperand::from_tacky_value(binary_instruction.left);
+        let right_operand = AsmOperand::from_tacky_value(binary_instruction.right.clone());
+        let dst_operand = AsmOperand::from_tacky_value(
+            TackyValue::Var(binary_instruction.dst)
+        );
+
+        match DivisionOutputs::from_binary_operator(operator) {
+            Ok(division_operator) => {
+                return Self::build_divide_instructions(
+                    left_operand, right_operand, dst_operand,
+                    division_operator
+                );
+            }
+            _ => {}
+        }
+
+        match ComparisonOutputs::from_binary_operator(operator) {
+            Ok(comparison_operator) => {
+                return Self::build_comparison_instructions(
+                    left_operand, right_operand, dst_operand,
+                    comparison_operator
+                );
+            }
+            _ => {}
+        }
+
+        /*
         ASM:
         ----------------------------
         Mov(src1, dst)
@@ -94,31 +177,8 @@ impl AsmBinaryInstruction {
         ASM instruction applies op to dst using src2
         and stores result in dst
         */
-        let left_operand = AsmOperand::from_tacky_value(binary_instruction.left);
-        let right_operand = AsmOperand::from_tacky_value(binary_instruction.right.clone());
-        let dst_operand = AsmOperand::from_tacky_value(
-            TackyValue::Var(binary_instruction.dst)
-        );
-
-        match binary_instruction.operator {
-            SupportedBinaryOperators::Divide => {
-                return Self::build_divide_instructions(
-                    left_operand, right_operand, dst_operand,
-                    DivisionOutputs::Quotient
-                );
-            }
-            SupportedBinaryOperators::Modulo => {
-                return Self::build_divide_instructions(
-                    left_operand, right_operand, dst_operand,
-                    DivisionOutputs::Remainder
-                );
-            },
-            _ => {}
-        }
-
-        let asm_binary_operator = AsmBinaryOperators::from_supported(
-            binary_instruction.operator
-        ).unwrap();
+        let asm_binary_operator =
+            AsmDirectBinaryOperators::from_supported(operator).unwrap();
         let asm_mov_instruction = MovInstruction::new(
             left_operand.clone(), dst_operand.clone()
         );
@@ -171,7 +231,7 @@ fn generate_multiply_asm(src_asm: String, dst_asm: String) -> String {
     // move destination to multiply scratch register first
     asm_code.push_str(&format!("movl {dst_asm}, {DST_SCRATCH_REGISTER}\n"));
 
-    let operator_asm = AsmBinaryOperators::Multiply.to_asm_string();
+    let operator_asm = AsmDirectBinaryOperators::Multiply.to_asm_string();
     asm_code.push_str(&format!(
         "{} {}, {}\n",
         operator_asm, src_asm, DST_SCRATCH_REGISTER
@@ -204,7 +264,7 @@ impl AsmSymbol for AsmBinaryInstruction {
             let mut asm_code: String = String::new();
             asm_code.push_str(&format!("movl {src_asm}, {SCRATCH_REGISTER}\n"));
 
-            if self.operator == AsmBinaryOperators::Multiply {
+            if self.operator == AsmDirectBinaryOperators::Multiply {
                 asm_code.push_str(generate_multiply_asm(
                     SCRATCH_REGISTER.to_string(), dst_asm
                 ).as_str())
@@ -216,7 +276,7 @@ impl AsmSymbol for AsmBinaryInstruction {
             }
             Ok(asm_code)
         } else {
-            if self.operator == AsmBinaryOperators::Multiply {
+            if self.operator == AsmDirectBinaryOperators::Multiply {
                 Ok(generate_multiply_asm(src_asm, dst_asm))
             } else {
                 Ok(format!("{} {}, {}", operator_asm, src_asm, dst_asm))
