@@ -1,7 +1,7 @@
 use crate::asm_gen::registers::{SCRATCH_REGISTER, DST_SCRATCH_REGISTER};
-use crate::asm_gen::asm_symbols::AsmSymbol;
+use crate::asm_gen::asm_symbols::{AsmGenError, AsmSymbol};
 use crate::asm_gen::asm_symbols::AsmOperand;
-use crate::parser::parse::Identifier;
+use crate::parser::parse::{Identifier, SupportedBinaryOperators};
 
 #[derive(Clone, Debug)]
 pub enum ConditionalCompareTypes {
@@ -11,6 +11,27 @@ pub enum ConditionalCompareTypes {
     GreaterThanOrEqual,
     LessThan,
     LessThanOrEqual,
+}
+impl ConditionalCompareTypes {
+    pub fn convert_from(
+        op: SupportedBinaryOperators
+    ) -> Result<Self, AsmGenError> {
+        match op {
+            SupportedBinaryOperators::CheckEqual => Ok(ConditionalCompareTypes::Equal),
+            SupportedBinaryOperators::NotEqual => Ok(ConditionalCompareTypes::NotEqual),
+            SupportedBinaryOperators::GreaterThan => Ok(ConditionalCompareTypes::GreaterThan),
+            SupportedBinaryOperators::GreaterOrEqual => {
+                Ok(ConditionalCompareTypes::GreaterThanOrEqual)
+            }
+            SupportedBinaryOperators::LessThan => Ok(ConditionalCompareTypes::LessThan),
+            SupportedBinaryOperators::LessOrEqual => {
+                Ok(ConditionalCompareTypes::LessThanOrEqual)
+            }
+            _ => Err(AsmGenError::UnsupportedInstruction(
+                format!("Unsupported comparison output operator: {:?}", op)
+            )),
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -84,4 +105,15 @@ pub struct AsmSetConditionalInstruction {
     // SetCC in the textbook
     pub(crate) destination: AsmOperand,
     pub(crate) condition: ConditionalCompareTypes
+}
+impl AsmSetConditionalInstruction {
+    pub fn new(
+        destination: AsmOperand,
+        condition: ConditionalCompareTypes
+    ) -> Self {
+        AsmSetConditionalInstruction {
+            destination,
+            condition
+        }
+    }
 }

@@ -1,8 +1,6 @@
 use std::cmp::PartialEq;
-use crate::asm_gen::asm_symbols::{
-    AsmGenError, AsmInstruction, AsmOperand, AsmSymbol,
-    Register
-};
+use crate::asm_gen::asm_symbols::{AsmGenError, AsmImmediateValue, AsmInstruction, AsmOperand, AsmSymbol, Register};
+use crate::asm_gen::cmp_instruction::{AsmCompareInstruction, AsmSetConditionalInstruction, ConditionalCompareTypes};
 use crate::asm_gen::registers::{DST_SCRATCH_REGISTER, SCRATCH_REGISTER};
 use crate::asm_gen::helpers::{
     BufferedHashMap, DiffableHashMap, StackAllocationResult,
@@ -44,37 +42,6 @@ impl AsmDirectBinaryOperators {
 pub enum DivisionOutputs {
     Quotient,
     Remainder
-}
-
-#[derive(Clone, Copy, Debug)]
-pub enum ComparisonOutputs {
-    Equal,
-    NotEqual,
-    GreaterThan,
-    GreaterThanOrEqual,
-    LessThan,
-    LessThanOrEqual
-}
-impl ComparisonOutputs {
-    pub fn from_binary_operator(
-        op: SupportedBinaryOperators
-    ) -> Result<Self, AsmGenError> {
-        match op {
-            SupportedBinaryOperators::CheckEqual => Ok(ComparisonOutputs::Equal),
-            SupportedBinaryOperators::NotEqual => Ok(ComparisonOutputs::NotEqual),
-            SupportedBinaryOperators::GreaterThan => Ok(ComparisonOutputs::GreaterThan),
-            SupportedBinaryOperators::GreaterOrEqual => {
-                Ok(ComparisonOutputs::GreaterThanOrEqual)
-            }
-            SupportedBinaryOperators::LessThan => Ok(ComparisonOutputs::LessThan),
-            SupportedBinaryOperators::LessOrEqual => {
-                Ok(ComparisonOutputs::LessThanOrEqual)
-            }
-            _ => Err(AsmGenError::UnsupportedInstruction(
-                format!("Unsupported comparison output operator: {:?}", op)
-            )),
-        }
-    }
 }
 
 impl DivisionOutputs {
@@ -129,9 +96,32 @@ impl AsmBinaryInstruction {
         left_operand: AsmOperand,
         right_operand: AsmOperand,
         dst_operand: AsmOperand,
-        desired_output: ComparisonOutputs
+        comparison_flag: ConditionalCompareTypes
     ) -> Vec<AsmInstruction> {
-        todo!()
+        /*
+        Binary(CMP_FLAG, left_operand, right_operand, dst_operand)
+        translates to
+        ----------------------------
+        Cmp(right_operand, left_operand)
+        // clear all bits in dst_operand (SetCC does not zero all bits)
+        Mov(0, dst_operand)
+        // set comparison flag in dst_operand (does not write all bits)
+        SetCC(CMP_FLAG, dst_operand)
+        */
+        let cmp_instruction = AsmInstruction::Compare(AsmCompareInstruction::new(
+            right_operand, left_operand
+        ));
+        let clear_dst_instruction = MovInstruction::new(
+            AsmOperand::ImmediateValue(AsmImmediateValue::new(0)), dst_operand.clone()
+        );
+        let set_cc_instruction = AsmInstruction::SetConditional(
+            AsmSetConditionalInstruction::new(dst_operand, comparison_flag)
+        );
+        vec![
+            cmp_instruction,
+            AsmInstruction::Mov(clear_dst_instruction),
+            set_cc_instruction
+        ]
     }
 
     pub fn unpack_from_tacky(binary_instruction: BinaryInstruction) -> Vec<AsmInstruction> {
@@ -158,7 +148,7 @@ impl AsmBinaryInstruction {
             _ => {}
         }
 
-        match ComparisonOutputs::from_binary_operator(operator) {
+        match ConditionalCompareTypes::convert_from(operator) {
             Ok(comparison_operator) => {
                 return Self::build_comparison_instructions(
                     left_operand, right_operand, dst_operand,
