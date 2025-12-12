@@ -216,6 +216,17 @@ pub struct PoppedTokenContext {
     pub start_source_position: usize,
     pub end_source_position: usize,
 }
+impl PoppedTokenContext {
+    pub(crate) fn format_as_string(&self) -> String {
+        format!(
+            "TokenRange[{}, {}], SourceRange[{}, {}]",
+            self.start_token_position,
+            self.end_token_position,
+            self.start_source_position,
+            self.end_source_position
+        )
+    }
+}
 impl BitOr for &PoppedTokenContext {
     type Output = PoppedTokenContext;
 

@@ -279,6 +279,19 @@ impl AnnotationInstruction {
     pub fn to_asm_instruction(self) -> AsmInstruction {
         AsmInstruction::Annotation(self)
     }
+    pub fn to_asm_code(self) -> Result<String, AsmGenError> {
+        let mut code = String::new();
+        // TODO: support multi-line labels?
+        assert!(!self.label.contains('\n'), "Annotation label cannot contain newlines");
+        code.push_str(format!("# {}", self.label).as_str());
+
+        if let Some(pop_context) = self.pop_context {
+            code.push_str("\n");
+            let pop_context_str = pop_context.format_as_string();
+            code.push_str(format!("# {}", pop_context_str).as_str());
+        }
+        Ok(code)
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -324,6 +337,9 @@ impl AsmSymbol for AsmInstruction {
                 code.push_str(&format!("popq {BASE_REGISTER}\n"));
                 code.push_str("ret\n");
                 Ok(code.to_string())
+            },
+            AsmInstruction::Annotation(annotation) => {
+                Ok(annotation.to_asm_code()?)
             },
             _ => {
                 Err(AsmGenError::InvalidInstructionType(
