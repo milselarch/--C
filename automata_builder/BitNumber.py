@@ -25,9 +25,9 @@ class BitNumber(BinNumber):
 
         return None
 
-    def solo_msb(self) -> Self:
+    def solo_msb(self) -> BitNumber:
         # take out all bits except the MSB
-        # i.e. 0b01011 becomes 0b01000
+        # i.e., 0b01011 becomes 0b01000
         msb_index = self.msb_index()
         new_num = BitNumber(num=0, num_bits=self.num_bits)
         if msb_index is None:
@@ -47,7 +47,7 @@ class UnsignedBitNumber(BitNumber):
         return copy.deepcopy(self)
 
     @overrides
-    def to_signed(self) -> Self:
+    def to_signed(self) -> SignedBitNumber:
         bits = copy.deepcopy(self.bits)
         return SignedBitNumber(
             num=bits, num_bits=self.num_bits
