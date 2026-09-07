@@ -59,6 +59,24 @@ class ProductWritesMap(Freezable):
     def _decode(cls, data: tuple) -> typing.Self:
         return cls(FreezableDefaultDict.decode(data))
 
+    @classmethod
+    def from_pairs(
+        cls, pairs: list[tuple[PyMultiTapeProduct, dict[int, int]]]
+    ):
+        prod_to_state_map: FreezableDefaultDict[
+            PyMultiTapeProduct, FreezableDict[TapeNo, TapeCellState]
+        ] = FreezableDefaultDict(
+            default_factory=FreezableDict
+        )
+
+        for product, writes_dict in pairs:
+            for tape_no, tape_cell_state in writes_dict.items():
+                prod_to_state_map[product][TapeNo(tape_no)] = (
+                    TapeCellState(tape_cell_state)
+                )
+
+        return ProductWritesMap(prod_to_state_map=prod_to_state_map)
+
     def get_translated_variants(
         self, target_product: PyMultiTapeProduct,
         offset_whitelist: set[int] | None = None

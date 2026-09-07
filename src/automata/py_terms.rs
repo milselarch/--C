@@ -330,7 +330,7 @@ impl PyProduct {
     fn _get_num_terms(&self) -> usize {
         self.product._get_num_terms()
     }
-    fn from_product(product: Product) -> Self {
+    pub(crate) fn from_product(product: Product) -> Self {
         PyProduct { product }
     }
 }

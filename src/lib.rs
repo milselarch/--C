@@ -3,6 +3,9 @@ use crate::automata::py_rule_generator_multitape::{
     PyBiDirectionalMultiTape, PyBidirectionalTape, PyMultiTapeAutomata, PyMultiTapeState,
     PyProcessStepResult, PyRenderFrame, PyWriteRecord,
 };
+use crate::automata::py_single_tape_automata::{
+    PySingleTapeAutomata, PySingleTapeProcessStepResult, PySingleTapeWriteRecord
+};
 use crate::potato_cpu::py_potato_cpu_tester::PyPotatoCPUTester;
 use crate::automata::py_terms::{A, PyProduct, PyExpression};
 use crate::automata::py_terms_multitape::{PyMultiTapeExpression, PyMultiTapeProduct, D};
@@ -41,5 +44,9 @@ fn py_ca_compiler(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<PyWriteRecord>()?;
     module.add_class::<PyProcessStepResult>()?;
     module.add_class::<PyMultiTapeAutomata>()?;
+
+    module.add_class::<PySingleTapeWriteRecord>()?;
+    module.add_class::<PySingleTapeProcessStepResult>()?;
+    module.add_class::<PySingleTapeAutomata>()?;
     Ok(())
 }
