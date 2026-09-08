@@ -1,6 +1,9 @@
 from typing import Final
 
-from automata_builder.rule_generator import TapeCellState
+from py_ca_compiler import A as Term
+from automata_builder.rule_generator import (
+    TapeCellState, AutomataTransitionsGroup
+)
 
 X: Final[TapeCellState] = TapeCellState(0)  # void state
 H: Final[TapeCellState] = TapeCellState(1)  # invalid / halt state
@@ -12,7 +15,12 @@ C: Final[TapeCellState] = TapeCellState(5)
 G: Final[TapeCellState] = TapeCellState(6)  # general state
 F: Final[TapeCellState] = TapeCellState(7)  # firing state
 
-RULE_MATRICES: dict[int, dict[int, dict[int, int]]] = {
+# Maps current_state -> left_state -> right_state -> new_state
+RULE_MATRICES: Final[dict[
+    TapeCellState, dict[
+        TapeCellState, dict[TapeCellState, TapeCellState]
+    ]
+]] = {
     L: {
         X: {X: H, L: L, A: H, B: H, C: H, G: H},
         L: {X: L, L: L, A: H, B: L, C: L, G: L},
@@ -54,3 +62,24 @@ RULE_MATRICES: dict[int, dict[int, dict[int, int]]] = {
         G: {X: F, L: B, A: H, B: G, C: G, G: F},
     }
 }
+
+
+class FiringSquadAutomataBuilder(object):
+    @staticmethod
+    def build_transitions_group() -> AutomataTransitionsGroup:
+        transitions_group = AutomataTransitionsGroup(num_states=None)
+
+        for left_state, middle_dict in RULE_MATRICES.items():
+            for middle_state, right_dict in middle_dict.items():
+                for right_state, new_middle_state in right_dict.items():
+                    input_terms = (
+                        Term(position=-1, state=left_state),
+                        Term(position=0, state=middle_state),
+                        Term(position=1, state=right_state),
+                    )
+                    transitions_group.add_transition(
+                        input_terms=input_terms,
+                        output_state=new_middle_state
+                    )
+
+        return transitions_group
