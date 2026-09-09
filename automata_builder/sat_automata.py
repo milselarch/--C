@@ -49,11 +49,11 @@ all the rules ever need to look at is the cell they are standing on,
 which is what makes them independent of the input.
 """
 
-LT_POSITIVE: Final[TapeCellState] = TapeCellState(0b01)
+LT_POSITIVE: Final[TapeCellState] = TapeCellState(0b10)
 """variable occurs un-negated within the clause"""
-LT_NEGATED: Final[TapeCellState] = TapeCellState(0b10)
+LT_NEGATED: Final[TapeCellState] = TapeCellState(0b11)
 """variable occurs negated within the clause"""
-LT_EITHER: Final[TapeCellState] = TapeCellState(0b11)
+LT_EITHER: Final[TapeCellState] = TapeCellState(0b100)
 """variable occurs both un-negated and negated within the clause"""
 
 AT_FALSE: Final[TapeCellState] = TapeCellState(0b10)
@@ -66,18 +66,21 @@ CT_INVALID_INPUT: Final[TapeCellState] = TapeCellState(0b11)
 
 """
 For the scan tape (LSB first to MSB last):
-- bits[0] => whether the rest of the state is a scan accumulator state
-    - bits[0] == 1: the state is a scan accumulator state
-        - bits[1] => whether the clause being scanned is satisfied so far
-        - bits[2] => whether all fully scanned clauses are satisfied
-    - bits[0] == 0: the state is not a scan accumulator state
+- bits[2] => whether the rest of the state is a scan accumulator state
+    - bits[2] == 1: the state is a scan accumulator state
+        - bits[0] => whether the clause being scanned is satisfied so far
+        - bits[1] => whether all fully scanned clauses are satisfied
+    - bits[2] == 0: the state is not a scan accumulator state
         - bits[1] == 1: the state is a spent (already scanned) cell
+
+Note that no cell state may be encoded as HALT_STATE (0b1), which is
+reserved by the multi-tape framework, hence the offset bits everywhere
 """
 ST_SPENT: Final[TapeCellState] = TapeCellState(0b10)
 
-VT_PENDING: Final[TapeCellState] = TapeCellState(0b01)
-VT_UNSAT: Final[TapeCellState] = TapeCellState(0b10)
-VT_SAT: Final[TapeCellState] = TapeCellState(0b11)
+VT_PENDING: Final[TapeCellState] = TapeCellState(0b10)
+VT_UNSAT: Final[TapeCellState] = TapeCellState(0b11)
+VT_SAT: Final[TapeCellState] = TapeCellState(0b100)
 
 LITERAL_STATES: Final[tuple[TapeCellState, ...]] = (
     VOID_STATE, LT_POSITIVE, LT_NEGATED, LT_EITHER
@@ -122,11 +125,11 @@ def scan_state(clause_sat: bool, formula_sat: bool) -> int:
     Encodes the scan accumulator cell state in the scan tape
 
     For the scan tape (LSB first to MSB last):
-    - bits[0] - whether the rest of the state is a scan accumulator state
-        - bits[0] == 1: the state is a scan accumulator state
-            - bits[1] - whether the clause being scanned is satisfied so far
-            - bits[2] - whether all fully scanned clauses are satisfied
-        - bits[0] == 0: the state is not a scan accumulator state
+    - bits[2] - whether the rest of the state is a scan accumulator state
+        - bits[2] == 1: the state is a scan accumulator state
+            - bits[0] - whether the clause being scanned is satisfied so far
+            - bits[1] - whether all fully scanned clauses are satisfied
+        - bits[2] == 0: the state is not a scan accumulator state
             - bits[1] == 1: the state is a spent (already scanned) cell
 
     :param clause_sat:
@@ -138,9 +141,9 @@ def scan_state(clause_sat: bool, formula_sat: bool) -> int:
     """
     # noinspection PyRedundantParentheses
     return (
-        (0b001) |  # bit 0: equals 1 when in a scan accumulator state
-        (0b010 if clause_sat else 0b000) |  # bit 1: clause satisfied so far
-        (0b100 if formula_sat else 0b000)  # bit 2: scanned clauses satisfied
+        (0b100) |  # bit 2: equals 1 when in a scan accumulator state
+        (0b001 if clause_sat else 0b000) |  # bit 0: clause satisfied so far
+        (0b010 if formula_sat else 0b000)  # bit 1: scanned clauses satisfied
     )
 
 
@@ -149,7 +152,7 @@ def is_scan_state(state: int) -> bool:
     :param state: scan tape cell state
     :return: whether the cell holds a scan accumulator state
     """
-    return (state & 0b001) != 0
+    return (state & 0b100) != 0
 
 
 def from_scan_state(state: int) -> tuple[bool, bool]:
@@ -159,9 +162,9 @@ def from_scan_state(state: int) -> tuple[bool, bool]:
     - clause_sat: whether the clause being scanned is satisfied so far
     - formula_sat: whether all fully scanned clauses are satisfied
     """
-    assert state & 0b001 != 0, state
-    clause_sat = (state & 0b010) != 0
-    formula_sat = (state & 0b100) != 0
+    assert is_scan_state(state), state
+    clause_sat = (state & 0b001) != 0
+    formula_sat = (state & 0b010) != 0
     return clause_sat, formula_sat
 
 
