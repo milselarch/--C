@@ -1,8 +1,7 @@
 import argparse
 
 from automata_builder.counter_automata import CounterAutomataRunner
-from automata_builder.rule_generator_multitape import BLANK_INT
-
+from automata_builder.rule_generator import BLANK_INT
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(

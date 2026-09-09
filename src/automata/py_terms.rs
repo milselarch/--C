@@ -68,6 +68,14 @@ impl ToPyExpression for Term {
     }
 }
 
+pub fn py_hash<T: Hash>(value: &T) -> PyResult<isize> {
+    let mut hasher = DefaultHasher::new();
+    value.hash(&mut hasher);
+    let h = hasher.finish();
+    // Keep conversion explicit/safe across platforms.
+    isize::try_from(h as i64).map_err(|_| PyValueError::new_err("hash overflow"))
+}
+
 #[gen_stub_pyclass]
 #[pyclass]
 #[derive(Clone, Debug)]
@@ -298,7 +306,7 @@ impl A {
 #[derive(struct_macro_eq::CustomEq, Clone, Debug, Hash)]
 #[ignore_regex="^_"]
 pub struct PyProduct {
-    product: Product
+    pub product: Product
 }
 impl PyProduct {
     pub fn new(terms: Vec<A>) -> Self {
@@ -322,7 +330,7 @@ impl PyProduct {
     fn _get_num_terms(&self) -> usize {
         self.product._get_num_terms()
     }
-    fn from_product(product: Product) -> Self {
+    pub(crate) fn from_product(product: Product) -> Self {
         PyProduct { product }
     }
 }
@@ -485,7 +493,7 @@ impl PyProduct {
 #[derive(struct_macro_eq::CustomEq, Clone, Debug, Hash)]
 #[ignore_regex="^_"]
 pub struct PyExpression {
-    expression: Expression
+    pub expression: Expression
 }
 impl PyExpression {
     pub fn new(expression: Expression) -> Self {

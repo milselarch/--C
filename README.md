@@ -2,7 +2,7 @@
 
 Goals of this programming language:
 1. Syntax supported is a subset of C
-   1. Any additional syntax that isn't supported by the C spec should
+   1. Any additional syntax not supported by the C spec should
         come with support for transpilation to C
    2. An exception to this is support for infinite length integers
 2. It can compile to x86-64 assembly
@@ -12,7 +12,7 @@ Goals of this programming language:
 4. True support for infinite length integers
    1. This is as opposed to arbitrary length integers with a length that is
       bounded by the largest int datatype
-   2. More specifically the infinite length integer should theoretically be able to 
+   2. More specifically, the infinite length integer should theoretically be able to 
       actually grow to infinity assuming a machine with an infinite address space 
       and infinite register size, but where the data size at each address 
       is finite still
@@ -36,7 +36,7 @@ For testing things related to the Potato CPU:
 1. Run test scripts for automata builder like as follows
    - Make sure to run `python -m pip install -e .` to install 
      `automata_builder` as an editable package first
-   - Run `python -m automata_builder.test_counter_automata` to 
+   - Run `python -m automata_builder.tests.test_counter_automata` to 
      execute `automata_builder/test_counter_automata.py` 
 2. Execute counter automata unittests with
    - `python -m unittest discover -s unittests`
@@ -84,6 +84,7 @@ Supported stages:
 - implement web automata visualizer tool
 - implement TUI for automata visualization
 - add annotated blocks for assembly generated
+- port cellular automata simulator to rust
 
 # DONE
 - multi-tape to single-tape cellular automata compiler

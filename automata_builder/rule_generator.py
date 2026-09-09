@@ -4,7 +4,25 @@ import dataclasses
 import typing
 import numpy as np
 
+from typing import Final, Self
 from py_ca_compiler import A, PyExpression, PyProduct
+
+
+class TapeNo(int):
+    pass
+
+
+class TapeCellState(int):
+    pass
+
+
+BLANK_INT: Final[int] = -1
+VOID_STATE: Final[TapeCellState] = TapeCellState(0b0)
+HALT_STATE: Final[TapeCellState] = TapeCellState(0b1)
+
+
+def is_halt_state(term: A) -> bool:
+    return term.get_state() == HALT_STATE
 
 
 @dataclasses.dataclass
@@ -15,13 +33,8 @@ class AutomataTransitionsGroup(object):
     map A[] -> output state
     """
     num_states: int | None = None
-    transitions_set: set[
-        tuple[
-            tuple[A, ...],
-            int
-        ]
-    ] = dataclasses.field(
-        default_factory=set
+    transitions_map: dict[tuple[A, ...], int] = dataclasses.field(
+        default_factory=dict
     )
     transitions: list[
         tuple[
@@ -32,21 +45,43 @@ class AutomataTransitionsGroup(object):
         default_factory=list
     )
 
+    def __len__(self):
+        return len(self.transitions)
+
     def __getitem__(self, index: int) -> tuple[PyProduct, int]:
         input_terms, output_state = self.transitions[index]
         input_product = PyProduct(input_terms)
         return input_product, output_state
 
+    def get_all_states(self):
+        all_states = {0}
+
+        for transition in self.transitions:
+            input_terms, output_state = transition
+            for term in input_terms:
+                all_states.add(term.get_state())
+
+            all_states.add(output_state)
+
+        return all_states
+
     @classmethod
-    def spawn_new(cls, num_states: int) -> AutomataTransitionsGroup:
+    def spawn_new(cls, num_states: int | None) -> AutomataTransitionsGroup:
         return cls(num_states=num_states, transitions=[])
 
     def add_transition(
-        self, input_terms: tuple[A, ...], output_state: int
+        self, input_terms: tuple[A, ...], output_state: int,
+        ban_halt_state: bool = False
     ) -> bool:
         transition_entry = (input_terms, output_state)
-        if transition_entry in self.transitions_set:
-            return False
+        if input_terms in self.transitions_map:
+            if self.transitions_map[input_terms] == output_state:
+                return False
+
+            raise ValueError(
+                f'Conflicting transition for input terms {input_terms}: '
+                f'{output_state} vs {self.transitions_map[input_terms]}'
+            )
 
         _num_states: int | float = float('inf')
         if self.num_states is not None:
@@ -59,9 +94,24 @@ class AutomataTransitionsGroup(object):
             state = term.get_state()
             assert 0 <= state < _num_states
 
+            if ban_halt_state and is_halt_state(term):
+                raise ValueError(
+                    f'Cannot add transition with halt state term: {term}'
+                )
+
         self.transitions.append(transition_entry)
-        self.transitions_set.add(transition_entry)
+        self.transitions_map[input_terms] = output_state
         return True
+
+    def merge(
+        self, other: AutomataTransitionsGroup
+    ) -> Self:
+        for input_terms, output_state in other.transitions:
+            self.add_transition(
+                input_terms=input_terms, output_state=output_state
+            )
+
+        return self
 
 
 @dataclasses.dataclass
@@ -300,9 +350,10 @@ class RuleGenerator(object):
         for next_state in sorted_states:
             log(f'{next_state} -> {state_eq_map[next_state]}')
 
-        for state in range(transitions_group.num_states):
-            err = f'State {state} missing in ruleset'
-            assert state in state_eq_terms_map, err
+        if transitions_group.num_states is not None:
+            for state in range(transitions_group.num_states):
+                err = f'State {state} missing in ruleset'
+                assert state in state_eq_terms_map, err
 
         return state_eq_map
 

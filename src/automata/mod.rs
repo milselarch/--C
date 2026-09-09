@@ -1,6 +1,13 @@
 pub mod terms;
-pub mod composer;
-pub mod overlaps;
 pub mod py_terms;
 pub mod terms_multitape;
 pub mod py_terms_multitape;
+pub mod tape_overlaps;
+pub mod rule_generator;
+pub mod renderer;
+pub mod product_writes_map;
+pub mod rule_generator_multitape;
+pub mod py_rule_generator_multitape;
+pub mod single_tape_automata;
+pub mod multi_tape_automata;
+pub mod py_single_tape_automata;
