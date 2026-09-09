@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import itertools
 import os
 import re
 
@@ -21,20 +20,75 @@ from automata_builder.rule_generator_multitape import (
     VOID_STATE,
 )
 
-CONSTRAINTS_TAPE: Final[TapeNo] = TapeNo(0)
+LITERALS_TAPE: Final[TapeNo] = TapeNo(0)
 ASSIGNMENTS_TAPE: Final[TapeNo] = TapeNo(1)
-CLAUSE_RESULTS_TAPE: Final[TapeNo] = TapeNo(2)
-VERDICT_TAPE: Final[TapeNo] = TapeNo(3)
+CLAUSES_TAPE: Final[TapeNo] = TapeNo(2)
+SCAN_TAPE: Final[TapeNo] = TapeNo(3)
+VERDICT_TAPE: Final[TapeNo] = TapeNo(4)
 
-ASSIGN_FALSE: Final[TapeCellState] = TapeCellState(2)
-ASSIGN_TRUE: Final[TapeCellState] = TapeCellState(3)
-CLAUSE_SAT: Final[TapeCellState] = TapeCellState(4)
-CLAUSE_UNSAT: Final[TapeCellState] = TapeCellState(5)
-VERDICT_PENDING: Final[TapeCellState] = TapeCellState(6)
-VERDICT_SAT: Final[TapeCellState] = TapeCellState(7)
-VERDICT_UNSAT: Final[TapeCellState] = TapeCellState(8)
-INVALID_INPUT_MARKER: Final[TapeCellState] = TapeCellState(9)
-FIRST_CLAUSE_STATE: Final[TapeCellState] = TapeCellState(16)
+"""
+The 3SAT automata evaluates a CNF formula against a variable assignment
+using a single ruleset that is completely independent of the formula and
+of the assignment being checked (i.e. the transition rules are universal).
+
+The formula and the assignment are instead encoded as tape data:
+the tape is split into one contiguous clause block per clause, and every
+clause block holds one cell per variable of the formula, i.e. cell
+(clause_no * num_variables + variable_no) belongs to clause :clause_no:
+and to variable :variable_no:. For each such cell:
+
+- LITERALS_TAPE holds how the variable occurs within the clause
+  (not at all, un-negated, negated, or both un-negated and negated)
+- ASSIGNMENTS_TAPE holds the truth value assigned to the variable
+  (the assignment vector is replicated once per clause block so that
+  every literal sits next to the value of its own variable)
+- CLAUSES_TAPE marks the leftmost cell of every clause block
+
+Because a variable is identified by its offset within a clause block,
+all the rules ever need to look at is the cell they are standing on,
+which is what makes them independent of the input.
+"""
+
+LT_POSITIVE: Final[TapeCellState] = TapeCellState(0b01)
+"""variable occurs un-negated within the clause"""
+LT_NEGATED: Final[TapeCellState] = TapeCellState(0b10)
+"""variable occurs negated within the clause"""
+LT_EITHER: Final[TapeCellState] = TapeCellState(0b11)
+"""variable occurs both un-negated and negated within the clause"""
+
+AT_FALSE: Final[TapeCellState] = TapeCellState(0b10)
+AT_TRUE: Final[TapeCellState] = TapeCellState(0b11)
+
+CT_CLAUSE_START: Final[TapeCellState] = TapeCellState(0b10)
+"""marks the leftmost cell of a clause block"""
+CT_INVALID_INPUT: Final[TapeCellState] = TapeCellState(0b11)
+"""marks input that could not be encoded, which is rejected outright"""
+
+"""
+For the scan tape (LSB first to MSB last):
+- bits[0] => whether the rest of the state is a scan accumulator state
+    - bits[0] == 1: the state is a scan accumulator state
+        - bits[1] => whether the clause being scanned is satisfied so far
+        - bits[2] => whether all fully scanned clauses are satisfied
+    - bits[0] == 0: the state is not a scan accumulator state
+        - bits[1] == 1: the state is a spent (already scanned) cell
+"""
+ST_SPENT: Final[TapeCellState] = TapeCellState(0b10)
+
+VT_PENDING: Final[TapeCellState] = TapeCellState(0b01)
+VT_UNSAT: Final[TapeCellState] = TapeCellState(0b10)
+VT_SAT: Final[TapeCellState] = TapeCellState(0b11)
+
+LITERAL_STATES: Final[tuple[TapeCellState, ...]] = (
+    VOID_STATE, LT_POSITIVE, LT_NEGATED, LT_EITHER
+)
+ASSIGNMENT_STATES: Final[tuple[TapeCellState, ...]] = (AT_FALSE, AT_TRUE)
+CLAUSE_STATES: Final[tuple[TapeCellState, ...]] = (VOID_STATE, CT_CLAUSE_START)
+
+VERDICT_POSITION: Final[int] = -1
+"""fixed position from which the verdict of the automata can be read"""
+DATA_START_POSITION: Final[int] = 0
+"""position of the leftmost cell of the leftmost clause block"""
 
 LEFT: Final[int] = -1
 MID: Final[int] = 0
@@ -50,26 +104,264 @@ def prefill_tape(position: int, tape_no: int) -> Callable[[int], D]:
     return set_cell_state
 
 
-def prefill_tape_no(tape_no: int) -> Callable[[int, int], D]:
-    def set_position_and_cell_state(position: int, cell_state: int) -> D:
-        return D(position, tape_no, cell_state)
+LT_MID: Final[Callable[[int], D]] = prefill_tape(MID, LITERALS_TAPE)
 
-    return set_position_and_cell_state
+AT_MID: Final[Callable[[int], D]] = prefill_tape(MID, ASSIGNMENTS_TAPE)
+AT_RIGHT: Final[Callable[[int], D]] = prefill_tape(RIGHT, ASSIGNMENTS_TAPE)
+
+CT_MID: Final[Callable[[int], D]] = prefill_tape(MID, CLAUSES_TAPE)
+
+ST_MID: Final[Callable[[int], D]] = prefill_tape(MID, SCAN_TAPE)
+ST_RIGHT: Final[Callable[[int], D]] = prefill_tape(RIGHT, SCAN_TAPE)
+
+VT_MID: Final[Callable[[int], D]] = prefill_tape(MID, VERDICT_TAPE)
 
 
-CONSTRAINTS_MID: Final[Callable[[int], D]] = prefill_tape(
-    MID, CONSTRAINTS_TAPE
-)
-ASSIGNMENTS: Final[Callable[[int, int], D]] = prefill_tape_no(
-    ASSIGNMENTS_TAPE
-)
-CLAUSE_RESULTS_MID: Final[Callable[[int], D]] = prefill_tape(
-    MID, CLAUSE_RESULTS_TAPE
-)
-CLAUSE_RESULTS: Final[Callable[[int, int], D]] = prefill_tape_no(
-    CLAUSE_RESULTS_TAPE
-)
-VERDICT_MID: Final[Callable[[int], D]] = prefill_tape(MID, VERDICT_TAPE)
+def scan_state(clause_sat: bool, formula_sat: bool) -> int:
+    """
+    Encodes the scan accumulator cell state in the scan tape
+
+    For the scan tape (LSB first to MSB last):
+    - bits[0] - whether the rest of the state is a scan accumulator state
+        - bits[0] == 1: the state is a scan accumulator state
+            - bits[1] - whether the clause being scanned is satisfied so far
+            - bits[2] - whether all fully scanned clauses are satisfied
+        - bits[0] == 0: the state is not a scan accumulator state
+            - bits[1] == 1: the state is a spent (already scanned) cell
+
+    :param clause_sat:
+    whether the clause currently being scanned has been satisfied by any
+    of the literals scanned so far
+    :param formula_sat:
+    whether every clause that has been scanned in full is satisfied
+    :return:
+    """
+    # noinspection PyRedundantParentheses
+    return (
+        (0b001) |  # bit 0: equals 1 when in a scan accumulator state
+        (0b010 if clause_sat else 0b000) |  # bit 1: clause satisfied so far
+        (0b100 if formula_sat else 0b000)  # bit 2: scanned clauses satisfied
+    )
+
+
+def is_scan_state(state: int) -> bool:
+    """
+    :param state: scan tape cell state
+    :return: whether the cell holds a scan accumulator state
+    """
+    return (state & 0b001) != 0
+
+
+def from_scan_state(state: int) -> tuple[bool, bool]:
+    """
+    :param state: scan accumulator state in the scan tape encoding
+    :return:
+    - clause_sat: whether the clause being scanned is satisfied so far
+    - formula_sat: whether all fully scanned clauses are satisfied
+    """
+    assert state & 0b001 != 0, state
+    clause_sat = (state & 0b010) != 0
+    formula_sat = (state & 0b100) != 0
+    return clause_sat, formula_sat
+
+
+def evaluate_literal(
+    literal_state: TapeCellState, assignment_state: TapeCellState
+) -> bool:
+    """
+    Evaluate the literal of a single clause block cell, i.e. whether the
+    clause is satisfied by the way the cell's variable occurs within it
+    :param literal_state: how the variable occurs within the clause
+    :param assignment_state: truth value assigned to the variable
+    :return:
+    """
+    if literal_state == LT_EITHER:
+        # both the variable and its negation are in the clause
+        return True
+    elif literal_state == LT_POSITIVE:
+        return assignment_state == AT_TRUE
+    elif literal_state == LT_NEGATED:
+        return assignment_state == AT_FALSE
+
+    # the variable does not occur within the clause at all
+    assert literal_state == VOID_STATE, literal_state
+    return False
+
+
+class ThreeSATAutomataBuilder(object):
+    """
+    Builds the transition rules of the 3SAT automata.
+
+    The ruleset is universal: it is built from the cell state encoding
+    alone and is identical for every formula and every assignment,
+    which are supplied to the automata as tape data instead.
+    """
+
+    @classmethod
+    def advance_scan_state(
+        cls, clause_sat: bool, formula_sat: bool,
+        literal_sat: bool, is_clause_start: bool
+    ) -> int:
+        """
+        Fold the cell the scan accumulator is moving onto into
+        the accumulated verdicts it is carrying.
+
+        Since the accumulator travels leftwards, the leftmost cell of a
+        clause block is the last cell of that clause to be scanned, which
+        is where the clause verdict is folded into the formula verdict and
+        the clause verdict is reset for the next clause block.
+
+        :param clause_sat:
+        :param formula_sat:
+        :param literal_sat:
+        :param is_clause_start:
+        :return:
+        """
+        new_clause_sat = clause_sat or literal_sat
+        if is_clause_start:
+            return scan_state(
+                clause_sat=False,
+                formula_sat=formula_sat and new_clause_sat
+            )
+
+        return scan_state(clause_sat=new_clause_sat, formula_sat=formula_sat)
+
+    def build_scan_transitions_group(
+        self, transitions_group: MultiTapeTransitionsGroup | None = None
+    ) -> MultiTapeTransitionsGroup:
+        """
+        Builds the rules that spawn a scan accumulator on the rightmost
+        clause block cell and move it leftwards by one cell per timestep,
+        evaluating every literal it passes over along the way.
+
+        :param transitions_group:
+        :return:
+        """
+        if transitions_group is not None:
+            _transitions_group = transitions_group
+        else:
+            _transitions_group = MultiTapeTransitionsGroup(
+                require_annotation=True
+            )
+
+        for literal_state in LITERAL_STATES:
+            for assignment_state in ASSIGNMENT_STATES:
+                for clause_state in CLAUSE_STATES:
+                    literal_sat = evaluate_literal(
+                        literal_state=literal_state,
+                        assignment_state=assignment_state
+                    )
+                    is_clause_start = clause_state == CT_CLAUSE_START
+                    # the cell that the scan accumulator moves onto
+                    # scan tape cell must be untouched by earlier scans
+                    cell_terms = (
+                        LT_MID(literal_state), AT_MID(assignment_state),
+                        CT_MID(clause_state), ST_MID(VOID_STATE)
+                    )
+                    cell_tag = (
+                        f'{literal_state}_{assignment_state}_{clause_state}'
+                    )
+
+                    # start the scan on the rightmost clause block cell,
+                    # i.e. the cell without assignment data to its right
+                    _transitions_group.add_transition(
+                        input_terms=cell_terms + (AT_RIGHT(VOID_STATE),),
+                        output_tape_no=SCAN_TAPE,
+                        output_cell_state=self.advance_scan_state(
+                            clause_sat=False, formula_sat=True,
+                            literal_sat=literal_sat,
+                            is_clause_start=is_clause_start
+                        ),
+                        annotation=f'SCAN_START_{cell_tag}'
+                    )
+
+                    for clause_sat in (False, True):
+                        for formula_sat in (False, True):
+                            # move the scan accumulator on the right leftwards
+                            _transitions_group.add_transition(
+                                input_terms=cell_terms + (ST_RIGHT(scan_state(
+                                    clause_sat=clause_sat,
+                                    formula_sat=formula_sat
+                                )),),
+                                output_tape_no=SCAN_TAPE,
+                                output_cell_state=self.advance_scan_state(
+                                    clause_sat=clause_sat,
+                                    formula_sat=formula_sat,
+                                    literal_sat=literal_sat,
+                                    is_clause_start=is_clause_start
+                                ),
+                                annotation=(
+                                    f'SCAN_SHL_{cell_tag}_'
+                                    f'{int(clause_sat)}{int(formula_sat)}'
+                                )
+                            )
+
+        # mark cells the scan accumulator has moved off as spent so that
+        # they are neither rescanned nor used to start a new scan
+        for clause_sat in (False, True):
+            for formula_sat in (False, True):
+                _transitions_group.add_transition(
+                    input_terms=(ST_MID(scan_state(
+                        clause_sat=clause_sat, formula_sat=formula_sat
+                    )),),
+                    output_tape_no=SCAN_TAPE,
+                    output_cell_state=ST_SPENT,
+                    annotation=(
+                        f'SCAN_SPEND_{int(clause_sat)}{int(formula_sat)}'
+                    )
+                )
+
+        return _transitions_group
+
+    @classmethod
+    def build_verdict_transitions_group(
+        cls, transitions_group: MultiTapeTransitionsGroup | None = None
+    ) -> MultiTapeTransitionsGroup:
+        """
+        Builds the rules that resolve the pending verdict cell once the
+        scan accumulator has run past the leftmost clause block cell,
+        as well as the rule that rejects input that could not be encoded.
+
+        :param transitions_group:
+        :return:
+        """
+        if transitions_group is not None:
+            _transitions_group = transitions_group
+        else:
+            _transitions_group = MultiTapeTransitionsGroup(
+                require_annotation=True
+            )
+
+        for formula_sat in (False, True):
+            # the scan is complete once the accumulator sits on the leftmost
+            # clause block cell, i.e. the cell without assignment data on
+            # the side the accumulator is travelling towards
+            _transitions_group.add_transition(
+                input_terms=(
+                    VT_MID(VT_PENDING), AT_MID(VOID_STATE),
+                    ST_RIGHT(scan_state(
+                        clause_sat=False, formula_sat=formula_sat
+                    ))
+                ),
+                output_tape_no=VERDICT_TAPE,
+                output_cell_state=VT_SAT if formula_sat else VT_UNSAT,
+                annotation=f'VERDICT_{int(formula_sat)}'
+            )
+
+        _transitions_group.add_transition(
+            input_terms=(VT_MID(VT_PENDING), CT_MID(CT_INVALID_INPUT)),
+            output_tape_no=VERDICT_TAPE,
+            output_cell_state=VT_UNSAT,
+            annotation='VERDICT_INVALID_INPUT'
+        )
+        return _transitions_group
+
+    def build_transitions_group(self) -> MultiTapeTransitionsGroup:
+        transitions_group = self.build_scan_transitions_group()
+        transitions_group = self.build_verdict_transitions_group(
+            transitions_group=transitions_group
+        )
+        return transitions_group
 
 
 @dataclass(frozen=True)
@@ -208,160 +500,112 @@ def parse_assignment(assignment: str) -> dict[str, bool] | None:
     return mapping
 
 
-def evaluate_clause(
-    clause: tuple[Literal, Literal, Literal],
-    assignment: dict[str, bool]
-) -> bool:
-    for literal in clause:
-        variable_val = assignment[literal.variable]
-        literal_val = (not variable_val) if literal.negated else variable_val
-        if literal_val:
-            return True
+@dataclass(frozen=True)
+class ThreeSATEncoding(object):
+    """
+    Tape data encoding of a formula and assignment pair, laid out as one
+    contiguous clause block per clause, where every clause block holds one
+    cell per variable of the formula
+    """
+    num_clauses: int
+    num_variables: int
+    literal_states: tuple[TapeCellState, ...]
+    assignment_states: tuple[TapeCellState, ...]
 
-    return False
+    @property
+    def num_cells(self) -> int:
+        return self.num_clauses * self.num_variables
 
 
-class ThreeSATAutomataBuilder(object):
-    def __init__(
-        self,
-        parsed_equation: Parsed3SAT | None,
-        variable_positions: dict[str, int],
-        invalid_input: bool = False,
-    ):
-        self.parsed_equation = parsed_equation
-        self.variable_positions = variable_positions
-        self.invalid_input = invalid_input
+def encode_3sat(
+    parsed_equation: Parsed3SAT, assignment: dict[str, bool]
+) -> ThreeSATEncoding | None:
+    """
+    Encode a formula and assignment pair into clause block tape data
+    :param parsed_equation:
+    :param assignment:
+    :return:
+    None if the assignment does not cover all formula variables
+    """
+    variable_names = parsed_equation.variable_names
+    for variable_name in variable_names:
+        if variable_name not in assignment:
+            return None
 
-    def get_clause_state(self, clause_index: int) -> TapeCellState:
-        return TapeCellState(int(FIRST_CLAUSE_STATE) + clause_index)
+    num_variables = len(variable_names)
+    num_clauses = len(parsed_equation.clauses)
+    variable_positions = {
+        variable_name: index
+        for index, variable_name in enumerate(variable_names)
+    }
 
-    def build_transitions_group(self) -> MultiTapeTransitionsGroup:
-        transitions_group = MultiTapeTransitionsGroup(require_annotation=True)
-        if self.invalid_input or self.parsed_equation is None:
-            transitions_group.add_transition(
-                input_terms=(VERDICT_MID(VERDICT_PENDING),),
-                output_tape_no=VERDICT_TAPE,
-                output_cell_state=VERDICT_UNSAT,
-                annotation='INVALID_INPUT_UNSAT'
-            )
-            return transitions_group
+    literal_states = [VOID_STATE] * (num_clauses * num_variables)
+    assignment_states = [VOID_STATE] * (num_clauses * num_variables)
 
-        for clause_index, clause in enumerate(self.parsed_equation.clauses):
-            clause_state = self.get_clause_state(clause_index)
-            unique_vars = sorted({literal.variable for literal in clause})
+    for clause_no, clause in enumerate(parsed_equation.clauses):
+        block_start = clause_no * num_variables
 
-            for bool_pattern in itertools.product(
-                (False, True), repeat=len(unique_vars)
-            ):
-                local_assignment = {
-                    unique_vars[k]: bool_pattern[k]
-                    for k in range(len(unique_vars))
-                }
-                clause_is_satisfied = evaluate_clause(clause, local_assignment)
-                output_state = (
-                    CLAUSE_SAT if clause_is_satisfied else CLAUSE_UNSAT
-                )
-
-                input_terms: list[D] = [
-                    CONSTRAINTS_MID(clause_state),
-                    CLAUSE_RESULTS_MID(VOID_STATE),
-                ]
-                assignment_bits: list[str] = []
-
-                for variable in unique_vars:
-                    variable_position = self.variable_positions[variable]
-                    variable_state = (
-                        ASSIGN_TRUE if local_assignment[variable]
-                        else ASSIGN_FALSE
-                    )
-                    input_terms.append(
-                        ASSIGNMENTS(variable_position - clause_index,
-                                    variable_state)
-                    )
-                    assignment_bits.append('1' if local_assignment[variable]
-                                           else '0')
-
-                annotation = (
-                    f'CLAUSE_{clause_index}_'
-                    f'{"".join(assignment_bits)}_'
-                    f'{"SAT" if clause_is_satisfied else "UNSAT"}'
-                )
-                transitions_group.add_transition(
-                    input_terms=tuple(input_terms),
-                    output_tape_no=CLAUSE_RESULTS_TAPE,
-                    output_cell_state=output_state,
-                    annotation=annotation
-                )
-
-        sat_terms: list[D] = [VERDICT_MID(VERDICT_PENDING)]
-        for clause_index in range(len(self.parsed_equation.clauses)):
-            sat_terms.append(CLAUSE_RESULTS(clause_index, CLAUSE_SAT))
-
-        transitions_group.add_transition(
-            input_terms=tuple(sat_terms),
-            output_tape_no=VERDICT_TAPE,
-            output_cell_state=VERDICT_SAT,
-            annotation='VERDICT_SAT'
-        )
-
-        for clause_index in range(len(self.parsed_equation.clauses)):
-            transitions_group.add_transition(
-                input_terms=(
-                    VERDICT_MID(VERDICT_PENDING),
-                    CLAUSE_RESULTS(clause_index, CLAUSE_UNSAT),
-                ),
-                output_tape_no=VERDICT_TAPE,
-                output_cell_state=VERDICT_UNSAT,
-                annotation=f'VERDICT_UNSAT_{clause_index}'
+        for variable_name in variable_names:
+            cell_no = block_start + variable_positions[variable_name]
+            assignment_states[cell_no] = (
+                AT_TRUE if assignment[variable_name] else AT_FALSE
             )
 
-        return transitions_group
+        for literal in clause:
+            cell_no = block_start + variable_positions[literal.variable]
+            literal_state = LT_NEGATED if literal.negated else LT_POSITIVE
+            prev_literal_state = literal_states[cell_no]
+
+            if prev_literal_state == VOID_STATE:
+                literal_states[cell_no] = literal_state
+            elif prev_literal_state != literal_state:
+                # the variable occurs both negated and un-negated
+                literal_states[cell_no] = LT_EITHER
+
+    return ThreeSATEncoding(
+        num_clauses=num_clauses, num_variables=num_variables,
+        literal_states=tuple(literal_states),
+        assignment_states=tuple(assignment_states)
+    )
 
 
 class ThreeSATAutomataRunner(object):
     def __init__(self, equation: str, assignment: str):
+        """
+        3SAT automata instance whose tapes are populated with the clause
+        block encoding of the :equation: and :assignment: pair
+        :param equation:
+        :param assignment:
+        """
         self.equation = equation
         self.assignment = assignment
-        self.invalid_input: bool = False
         self.invalid_reason: str | None = None
+        self.encoding: ThreeSATEncoding | None = None
 
         parsed_equation = parse_3sat_equation(equation)
         parsed_assignment = parse_assignment(assignment)
+
         if parsed_equation is None:
-            self.invalid_input = True
             self.invalid_reason = 'INVALID_EQUATION'
         elif parsed_assignment is None:
-            self.invalid_input = True
             self.invalid_reason = 'INVALID_ASSIGNMENT'
         else:
-            missing_variables = [
-                name for name in parsed_equation.variable_names
-                if name not in parsed_assignment
-            ]
-            if missing_variables:
-                self.invalid_input = True
+            encoding = encode_3sat(parsed_equation, parsed_assignment)
+            if encoding is None:
+                missing_variables = [
+                    name for name in parsed_equation.variable_names
+                    if name not in parsed_assignment
+                ]
                 self.invalid_reason = (
                     f'MISSING_ASSIGNMENT:{",".join(missing_variables)}'
                 )
+            else:
+                self.encoding = encoding
 
-        self.parsed_equation = parsed_equation if not self.invalid_input else None
-        self.parsed_assignment = (
-            parsed_assignment if not self.invalid_input else None
-        )
+        self.parsed_equation = parsed_equation
+        self.parsed_assignment = parsed_assignment
 
-        if self.parsed_equation is None:
-            self.variable_positions: dict[str, int] = {}
-        else:
-            variable_names = self.parsed_equation.variable_names
-            self.variable_positions = {
-                name: index for index, name in enumerate(variable_names)
-            }
-
-        self.builder = ThreeSATAutomataBuilder(
-            parsed_equation=self.parsed_equation,
-            variable_positions=self.variable_positions,
-            invalid_input=self.invalid_input,
-        )
+        self.builder = ThreeSATAutomataBuilder()
         self.transitions_group = self.builder.build_transitions_group()
         self.state_eq_map = MultiTapeRuleGenerator.generate_equations(
             self.transitions_group
@@ -369,71 +613,98 @@ class ThreeSATAutomataRunner(object):
         self.multi_tape_automata = MultiTapeAutomata(self.state_eq_map)
         self.multi_tape_automata.init_tapes(
             tape_nos=[
-                CONSTRAINTS_TAPE,
-                ASSIGNMENTS_TAPE,
-                CLAUSE_RESULTS_TAPE,
-                VERDICT_TAPE,
+                LITERALS_TAPE, ASSIGNMENTS_TAPE, CLAUSES_TAPE,
+                SCAN_TAPE, VERDICT_TAPE
             ]
         )
         self._initialize_tapes()
 
-    def _initialize_tapes(self):
+    @property
+    def invalid_input(self) -> bool:
+        return self.encoding is None
+
+    def _write_cell(self, position: int, tape_no: TapeNo, state: int):
         self.multi_tape_automata.write_region(
-            position=0,
-            end_position=0,
-            data=[MultiTapeState(VERDICT_TAPE, VERDICT_PENDING)],
+            position=position, end_position=position,
+            data=[MultiTapeState(
+                tape_no=tape_no, tape_cell_state=TapeCellState(state)
+            )]
         )
 
-        if self.invalid_input:
-            self.multi_tape_automata.write_region(
-                position=0,
-                end_position=0,
-                data=[MultiTapeState(CONSTRAINTS_TAPE, INVALID_INPUT_MARKER)],
+    def _initialize_tapes(self):
+        self._write_cell(VERDICT_POSITION, VERDICT_TAPE, VT_PENDING)
+
+        if self.encoding is None:
+            self._write_cell(
+                VERDICT_POSITION, CLAUSES_TAPE, CT_INVALID_INPUT
             )
             return
 
-        assert self.parsed_equation is not None
-        assert self.parsed_assignment is not None
+        encoding = self.encoding
+        for cell_no in range(encoding.num_cells):
+            position = DATA_START_POSITION + cell_no
+            literal_state = encoding.literal_states[cell_no]
 
-        for clause_index in range(len(self.parsed_equation.clauses)):
-            self.multi_tape_automata.write_region(
-                position=clause_index,
-                end_position=clause_index,
-                data=[MultiTapeState(
-                    CONSTRAINTS_TAPE, self.builder.get_clause_state(clause_index)
-                )],
-            )
+            if literal_state != VOID_STATE:
+                self._write_cell(position, LITERALS_TAPE, literal_state)
 
-        for variable_name, variable_position in self.variable_positions.items():
-            variable_value = self.parsed_assignment[variable_name]
-            encoded_value = ASSIGN_TRUE if variable_value else ASSIGN_FALSE
-            self.multi_tape_automata.write_region(
-                position=variable_position,
-                end_position=variable_position,
-                data=[MultiTapeState(ASSIGNMENTS_TAPE, encoded_value)],
+            self._write_cell(
+                position, ASSIGNMENTS_TAPE,
+                encoding.assignment_states[cell_no]
             )
+            if cell_no % encoding.num_variables == 0:
+                self._write_cell(position, CLAUSES_TAPE, CT_CLAUSE_START)
+
+    def get_required_timesteps(self) -> int:
+        """
+        :return:
+        Number of timesteps (including the initial one) needed for the
+        automata to reach a verdict, which is one timestep to start the
+        scan, one timestep per remaining clause block cell to move the
+        scan accumulator leftwards, and one timestep to write the verdict
+        """
+        if self.encoding is None:
+            return 2
+
+        return self.encoding.num_cells + 2
 
     def step(self, verbose: bool = False) -> ProcessStepResult:
         return self.multi_tape_automata.step(verbose=verbose)
 
     def read_verdict_state(self) -> TapeCellState:
         verdict_tape = self.multi_tape_automata[VERDICT_TAPE]
-        return TapeCellState(verdict_tape.read(0))
+        return TapeCellState(verdict_tape.read(VERDICT_POSITION))
+
+    def read_scan_state(self) -> tuple[bool, bool] | None:
+        """
+        :return:
+        The (clause_sat, formula_sat) verdicts accumulated so far by the
+        scan accumulator, or None when no scan accumulator is on the tapes
+        """
+        scan_tape = self.multi_tape_automata[SCAN_TAPE]
+        min_position, max_position = scan_tape.get_range()
+
+        for position in range(min_position, max_position + 1):
+            scan_tape_state = scan_tape.read(position)
+            if is_scan_state(scan_tape_state):
+                return from_scan_state(scan_tape_state)
+
+        return None
 
     def read_verdict(self) -> str:
         verdict_state = self.read_verdict_state()
-        if verdict_state == VERDICT_SAT:
+        if verdict_state == VT_SAT:
             return 'SAT'
-        if verdict_state == VERDICT_UNSAT:
+        if verdict_state == VT_UNSAT:
             return 'UNSAT'
         return 'PENDING'
 
     def is_satisfiable(self) -> bool:
-        return self.read_verdict_state() == VERDICT_SAT
+        return self.read_verdict_state() == VT_SAT
 
     def run_simulation(
         self,
-        num_timesteps: int = 3,
+        num_timesteps: int = BLANK_INT,
         terminal_width: int = BLANK_INT,
         render_start: int = -3,
         render: bool = False,
@@ -446,6 +717,8 @@ class ThreeSATAutomataRunner(object):
 
         if terminal_width == BLANK_INT:
             terminal_width = default_terminal_width
+        if num_timesteps == BLANK_INT:
+            num_timesteps = self.get_required_timesteps()
 
         for timestep in range(num_timesteps):
             if timestep > 0:
@@ -459,8 +732,9 @@ class ThreeSATAutomataRunner(object):
                 )
                 print(f'\nTIMESTEP {timestep}:')
                 print(frame.render())
+                print(f'scan={self.read_scan_state()}')
                 print(f'verdict={self.read_verdict()}')
 
-    def evaluate(self, num_timesteps: int = 3) -> str:
+    def evaluate(self, num_timesteps: int = BLANK_INT) -> str:
         self.run_simulation(num_timesteps=num_timesteps, render=False)
         return self.read_verdict()
