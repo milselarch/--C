@@ -6,15 +6,13 @@ import re
 from dataclasses import dataclass
 from typing import Callable, Final
 
-from py_ca_compiler import D
+from py_ca_compiler import D, PyMultiTapeAutomata, PyProcessStepResult
 
+from automata_builder.rule_generator import BLANK_INT
 from automata_builder.rule_generator_multitape import (
-    BLANK_INT,
-    MultiTapeAutomata,
     MultiTapeRuleGenerator,
     MultiTapeState,
     MultiTapeTransitionsGroup,
-    ProcessStepResult,
     TapeCellState,
     TapeNo,
     VOID_STATE,
@@ -26,6 +24,9 @@ CLAUSES_TAPE: Final[TapeNo] = TapeNo(2)
 SCAN_TAPE: Final[TapeNo] = TapeNo(3)
 VERDICT_TAPE: Final[TapeNo] = TapeNo(4)
 
+# TODO: THE AUTOMATA RULES DO NOT IMPLEMENT THE MOST IMPORTANT PART
+#   WHICH IS VERIFYING THAT VAR ASSIGNMENTS LAID OUT IN TAPE
+#   ARE NON-CONFLICTING
 """
 The 3SAT automata evaluates a CNF formula against a variable assignment
 using a single ruleset that is completely independent of the formula and
@@ -613,7 +614,7 @@ class ThreeSATAutomataRunner(object):
         self.state_eq_map = MultiTapeRuleGenerator.generate_equations(
             self.transitions_group
         )
-        self.multi_tape_automata = MultiTapeAutomata(self.state_eq_map)
+        self.multi_tape_automata = PyMultiTapeAutomata(self.state_eq_map)
         self.multi_tape_automata.init_tapes(
             tape_nos=[
                 LITERALS_TAPE, ASSIGNMENTS_TAPE, CLAUSES_TAPE,
@@ -671,7 +672,7 @@ class ThreeSATAutomataRunner(object):
 
         return self.encoding.num_cells + 2
 
-    def step(self, verbose: bool = False) -> ProcessStepResult:
+    def step(self, verbose: bool = False) -> PyProcessStepResult:
         return self.multi_tape_automata.step(verbose=verbose)
 
     def read_verdict_state(self) -> TapeCellState:
