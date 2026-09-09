@@ -22,6 +22,34 @@ except ModuleNotFoundError:
 
 
 class TestLagariasAutomata(unittest.TestCase):
+    @staticmethod
+    def _transition_signature(transition) -> tuple:
+        input_terms = []
+        for term in transition.input_terms:
+            if hasattr(term, "get_position"):
+                position = term.get_position()
+                tape_no = term.get_tape_no()
+                state = term.get_state()
+            else:
+                position = term.position
+                tape_no = term.tape_no
+                state = term.state
+            input_terms.append((int(position), int(tape_no), int(state)))
+
+        if hasattr(transition, "output_state"):
+            output_tape_no = int(transition.output_state.tape_no)
+            output_cell_state = int(transition.output_state.tape_cell_state)
+        else:
+            output_tape_no = int(transition.output_tape_no)
+            output_cell_state = int(transition.output_cell_state)
+
+        return (
+            tuple(sorted(input_terms)),
+            output_tape_no,
+            output_cell_state,
+            transition.annotation,
+        )
+
     def test_transition_group_families_exist(self) -> None:
         builder = LagariasAutomataBuilder(base=6)
         family_names = [group.name for group in builder.build_transitions_group()]
@@ -79,6 +107,30 @@ class TestLagariasAutomata(unittest.TestCase):
             runner.tape_registers[CONTROL_TAPE],
             initial_control,
         )
+
+    def test_timestep_transition_rules_are_input_independent(self) -> None:
+        runner_small = LagariasAutomataRunner(
+            base=8,
+            initial_write_start=0,
+            initial_write_end=4,
+            derive_n_via_counter_automata=False,
+        )
+        runner_large = LagariasAutomataRunner(
+            base=8,
+            initial_write_start=0,
+            initial_write_end=14,
+            derive_n_via_counter_automata=False,
+        )
+
+        small_signatures = [
+            self._transition_signature(transition)
+            for transition in runner_small.transitions_group.transitions
+        ]
+        large_signatures = [
+            self._transition_signature(transition)
+            for transition in runner_large.transitions_group.transitions
+        ]
+        self.assertEqual(small_signatures, large_signatures)
 
     @unittest.skipUnless(
         HAS_COUNTER_AUTOMATA,

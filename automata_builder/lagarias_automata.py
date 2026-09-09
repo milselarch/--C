@@ -4,7 +4,7 @@ import dataclasses
 import math
 
 from fractions import Fraction
-from typing import Callable, Final, Sequence
+from typing import Callable, Final
 
 try:
     from py_ca_compiler import D, PyMultiTapeAutomata, PyProcessStepResult
@@ -126,7 +126,15 @@ OUTPUT_TRUE_STATE: Final[int] = 1
 OUTPUT_FALSE_STATE: Final[int] = 2
 OUTPUT_HALT_STATE: Final[int] = 3
 
-CONTROL_STATE_START: Final[int] = 64
+CONTROL_BOOT_STATE: Final[int] = 64
+CONTROL_SIGMA_STATE: Final[int] = 65
+CONTROL_HARMONIC_STATE: Final[int] = 66
+CONTROL_DECISION_STATE: Final[int] = 67
+CONTROL_HALT_TRUE_STATE: Final[int] = 68
+CONTROL_HALT_FALSE_STATE: Final[int] = 69
+CONTROL_HALT_STATE: Final[int] = 70
+
+CONTROL_STATE_START: Final[int] = CONTROL_BOOT_STATE
 ENCODED_STATE_START: Final[int] = 4
 
 MID: Final[int] = 0
@@ -288,41 +296,66 @@ class LagariasAutomataBuilder(object):
 
     @staticmethod
     def build_timestep_transitions_group(
-        snapshots: Sequence[LagariasExecutionSnapshot],
+        snapshots: object | None = None
     ) -> MultiTapeTransitionsGroup:
-        if len(snapshots) < 2:
-            raise ValueError(
-                "Need at least 2 snapshots to define timestep transitions"
-            )
-
+        _ = snapshots
         transitions_group = MultiTapeTransitionsGroup(
             require_annotation=True
         )
 
-        for step_no in range(len(snapshots) - 1):
-            previous_snapshot = snapshots[step_no]
-            next_snapshot = snapshots[step_no + 1]
-            input_terms = (CONTROL_MID(previous_snapshot.control_state),)
+        control_progression = (
+            (CONTROL_BOOT_STATE, CONTROL_SIGMA_STATE, 'BOOT_TO_SIGMA'),
+            (CONTROL_SIGMA_STATE, CONTROL_HARMONIC_STATE, 'SIGMA_TO_HARMONIC'),
+            (
+                CONTROL_HARMONIC_STATE,
+                CONTROL_DECISION_STATE,
+                'HARMONIC_TO_DECISION'
+            ),
+            (
+                CONTROL_DECISION_STATE,
+                CONTROL_SIGMA_STATE,
+                'DECISION_TO_SIGMA'
+            ),
+            (
+                CONTROL_HALT_TRUE_STATE,
+                CONTROL_HALT_STATE,
+                'HALT_TRUE_TO_HALT'
+            ),
+            (
+                CONTROL_HALT_FALSE_STATE,
+                CONTROL_HALT_STATE,
+                'HALT_FALSE_TO_HALT'
+            ),
+            (CONTROL_HALT_STATE, CONTROL_HALT_STATE, 'HALT_LOOP'),
+        )
 
-            for tape_no, tape_cell_state in next_snapshot.tape_states.items():
-                transitions_group.add_transition(
-                    input_terms=input_terms,
-                    output_tape_no=tape_no,
-                    output_cell_state=tape_cell_state,
-                    annotation=(
-                        f'{next_snapshot.family_name}_STEP_{step_no}_'
-                        f'T{int(tape_no)}'
-                    ),
-                )
-
-        final_snapshot = snapshots[-1]
-        halt_input = (CONTROL_MID(final_snapshot.control_state),)
-        for tape_no, tape_cell_state in final_snapshot.tape_states.items():
+        for source_state, target_state, annotation in control_progression:
             transitions_group.add_transition(
-                input_terms=halt_input,
-                output_tape_no=tape_no,
-                output_cell_state=tape_cell_state,
-                annotation=f'DECISION_AND_HALT_LOOP_T{int(tape_no)}',
+                input_terms=(CONTROL_MID(source_state),),
+                output_tape_no=CONTROL_TAPE,
+                output_cell_state=target_state,
+                annotation=annotation,
+            )
+
+        output_rules = (
+            (
+                CONTROL_HALT_TRUE_STATE,
+                OUTPUT_TRUE_STATE,
+                'OUTPUT_TRUE_ON_HALT_TRUE'
+            ),
+            (
+                CONTROL_HALT_FALSE_STATE,
+                OUTPUT_FALSE_STATE,
+                'OUTPUT_FALSE_ON_HALT_FALSE'
+            ),
+            (CONTROL_HALT_STATE, OUTPUT_HALT_STATE, 'OUTPUT_HALT_LOOP'),
+        )
+        for source_state, output_state, annotation in output_rules:
+            transitions_group.add_transition(
+                input_terms=(CONTROL_MID(source_state),),
+                output_tape_no=OUTPUT_TAPE,
+                output_cell_state=output_state,
+                annotation=annotation,
             )
 
         return transitions_group
@@ -512,9 +545,7 @@ class LagariasAutomataRunner(object):
         self.current_snapshot_index = 0
         self.final_snapshot_index = len(self.execution_snapshots) - 1
 
-        self.transitions_group = self.builder.build_timestep_transitions_group(
-            snapshots=self.execution_snapshots
-        )
+        self.transitions_group = self.builder.build_timestep_transitions_group()
         self.state_eq_map: dict = {}
         self.multi_tape_automata: PyMultiTapeAutomata | None = None
 
