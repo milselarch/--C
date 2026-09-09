@@ -61,7 +61,7 @@ class MultiTapeTransitionsGroup(object):
         :param output_tape_no:
         :param output_cell_state:
         :param validate_void:
-        If true, check that the input terms do not all have void state
+        If true, check that the input terms do not all have a void state
         :param validate_halt:
         If true, check that the halt state is not within input terms
         :param annotation:

@@ -6,7 +6,8 @@ from py_ca_compiler import A, PyProduct
 from tqdm import tqdm
 
 from automata_builder.counter_automata import (
-    CounterAutomataRunner, DT_DATA, DATA_TAPE, SIGNALS_TAPE, from_counter_state
+    CounterAutomataRunner, DT_DATA, DATA_TAPE, SIGNALS_TAPE,
+    from_counter_state
 )
 from automata_builder.rule_generator_multitape import (
     MultiTapeBuilder, MultiTapeState

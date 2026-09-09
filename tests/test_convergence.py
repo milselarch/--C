@@ -1,7 +1,7 @@
 from typing import Final
 
 from automata_builder.counter_automata import CounterAutomataRunner
-from automata_builder.rule_generator_multitape import BLANK_INT
+from automata_builder.rule_generator import BLANK_INT
 
 BASE: Final[int] = 2
 WRITE_START: Final[int] = 0

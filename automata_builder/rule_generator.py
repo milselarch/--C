@@ -45,10 +45,25 @@ class AutomataTransitionsGroup(object):
         default_factory=list
     )
 
+    def __len__(self):
+        return len(self.transitions)
+
     def __getitem__(self, index: int) -> tuple[PyProduct, int]:
         input_terms, output_state = self.transitions[index]
         input_product = PyProduct(input_terms)
         return input_product, output_state
+
+    def get_all_states(self):
+        all_states = {0}
+
+        for transition in self.transitions:
+            input_terms, output_state = transition
+            for term in input_terms:
+                all_states.add(term.get_state())
+
+            all_states.add(output_state)
+
+        return all_states
 
     @classmethod
     def spawn_new(cls, num_states: int | None) -> AutomataTransitionsGroup:
@@ -335,9 +350,10 @@ class RuleGenerator(object):
         for next_state in sorted_states:
             log(f'{next_state} -> {state_eq_map[next_state]}')
 
-        for state in range(transitions_group.num_states):
-            err = f'State {state} missing in ruleset'
-            assert state in state_eq_terms_map, err
+        if transitions_group.num_states is not None:
+            for state in range(transitions_group.num_states):
+                err = f'State {state} missing in ruleset'
+                assert state in state_eq_terms_map, err
 
         return state_eq_map
 
