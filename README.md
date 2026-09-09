@@ -36,7 +36,7 @@ For testing things related to the Potato CPU:
 1. Run test scripts for automata builder like as follows
    - Make sure to run `python -m pip install -e .` to install 
      `automata_builder` as an editable package first
-   - Run `python -m automata_builder.test_counter_automata` to 
+   - Run `python -m automata_builder.tests.test_counter_automata` to 
      execute `automata_builder/test_counter_automata.py` 
 2. Execute counter automata unittests with
    - `python -m unittest discover -s unittests`

@@ -6,13 +6,17 @@ use pyo3::types::PyDict;
 use pyo3::{pyclass, pymethods, PyResult};
 use pyo3_stub_gen::define_stub_info_gatherer;
 use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pymethods};
-
+use crate::automata::multi_tape_automata::{
+    MultiTapeAutomata, ProcessStepResult, WriteRecord
+};
 use crate::automata::py_terms::py_hash;
-use crate::automata::py_terms_multitape::{PyMultiTapeExpression, PyMultiTapeProduct, D};
+use crate::automata::py_terms_multitape::{
+    PyMultiTapeExpression, PyMultiTapeProduct, D
+};
 use crate::automata::renderer::RenderFrame;
 use crate::automata::rule_generator::{BidirectionalTape, TapeError};
 use crate::automata::rule_generator_multitape::{
-    AutomataError, BiDirectionalMultiTape, MultiTapeAutomata, ProcessStepResult, WriteRecord,
+    AutomataError, BiDirectionalMultiTape
 };
 use crate::automata::tape_overlaps::MultiTapeState;
 use crate::automata::terms::CellState;
@@ -77,10 +81,10 @@ fn extract_expression(obj: &Bound<'_, PyAny>) -> PyResult<MultiTapeExpression> {
         return Ok(expr.expression);
     }
     if let Ok(product) = obj.extract::<PyMultiTapeProduct>() {
-        return Ok(product.to_py_expression().unwrap().expression);
+        return Ok(product.to_py_expression()?.expression);
     }
     if let Ok(term) = obj.extract::<D>() {
-        return Ok(term.to_py_expression().unwrap().expression);
+        return Ok(term.to_py_expression()?.expression);
     }
     Err(PyTypeError::new_err(
         "Expected a PyMultiTapeExpression, PyMultiTapeProduct or D term",
