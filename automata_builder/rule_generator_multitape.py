@@ -15,16 +15,15 @@ from automata_builder.tape_overlaps_fsm import (
 from utils import FreezableSet, FrozenSet
 from automata_builder.rule_generator import (
     AutomataTransitionsGroup, TapeCellState, TapeNo,
-    VOID_STATE, HALT_STATE, BLANK_INT, BidirectionalTape
+    VOID_STATE, HALT_STATE
 )
-from automata_builder.renderer import RenderFrame, TapeRenderFrame
 from automata_builder.tape_overlaps import (
     MultiTapeState, TapeOverlaps, MultiTapeStatesMap,
     FrozenTapeOverlaps, is_product_satisfiable
 )
 from py_ca_compiler import (
     D, PyMultiTapeProduct, PyMultiTapeExpression,
-    A, PyProduct
+    A, PyProduct, PyMultiTapeAutomata
 )
 
 
@@ -62,7 +61,7 @@ class MultiTapeTransitionsGroup(object):
         :param output_tape_no:
         :param output_cell_state:
         :param validate_void:
-        If true, check that the input terms do not all have void state
+        If true, check that the input terms do not all have a void state
         :param validate_halt:
         If true, check that the halt state is not within input terms
         :param annotation:
@@ -195,169 +194,6 @@ class MultiTapeRuleGenerator(object):
                     assert product.get_annotation()
 
         return state_eq_map
-
-
-class BiDirectionalMultiTape(object):
-    def __init__(self, tapes: dict[TapeNo, BidirectionalTape] | None = None):
-        self._freeze_tapes: bool = False
-
-        if tapes is not None:
-            self._tapes: dict[TapeNo, BidirectionalTape] = tapes
-        else:
-            self._tapes: dict[TapeNo, BidirectionalTape] = {}
-
-    def get_or_make_tape(self, tape_no: TapeNo) -> BidirectionalTape:
-        if tape_no not in self._tapes:
-            if self._freeze_tapes:
-                raise ValueError(
-                    "Cannot write to new tape when tapes are frozen"
-                )
-
-            self._tapes[tape_no] = BidirectionalTape()
-
-        return self._tapes[tape_no]
-
-    def __getitem__(self, tape_no: TapeNo) -> BidirectionalTape:
-        return self.get_or_make_tape(tape_no=tape_no)
-
-    def init_tapes(self, tape_nos: list[TapeNo], freeze: bool = True):
-        for tape_no in tape_nos:
-            self.get_or_make_tape(tape_no)
-
-        if freeze:
-            self._freeze_tapes = True
-
-    def get_tape_nos(self) -> list[TapeNo]:
-        return sorted(list(self._tapes.keys()))
-
-    def write_region(
-        self, position: int, end_position: int,
-        data: list[MultiTapeState]
-    ):
-        """
-        Populate the automata cells from :position: to :end_position:
-        (inclusive) using :data: as a full pattern
-        :param position:
-        :param end_position:
-        :param data:
-        :return:
-        """
-        for new_position in range(position, end_position+1):
-            offset = new_position - position
-            value = data[offset % len(data)]
-            self.write(new_position, value)
-
-    def write(self, position: int, value: MultiTapeState):
-        tape = self.get_or_make_tape(value.tape_no)
-        tape.write(position, value.tape_cell_state)
-
-    def get_all_states(self) -> set[TapeCellState]:
-        all_states = set()
-        for tape in self._tapes.values():
-            all_states |= tape.get_all_states()
-
-        return all_states
-
-    def prune(self):
-        tape_nos = sorted(set(self._tapes.keys()))
-
-        for tape_no in tape_nos:
-            tape = self._tapes[tape_no]
-            tape.prune()
-
-    def render_tapes(
-        self, start_position: int, length: int,
-        cell_width: int = BLANK_INT
-    ) -> RenderFrame:
-        all_states = self.get_all_states()
-        max_state = VOID_STATE if not all_states else max(all_states)
-
-        if cell_width == BLANK_INT:
-            cell_width = len(str(max_state))
-        elif cell_width < len(str(max_state)):
-            raise ValueError(
-                f"Cell width {cell_width} is too small to fit "
-                f"the largest state {max_state}"
-            )
-
-        tape_nos = sorted(set(self._tapes.keys()) | {TapeNo(0)})
-        left_tabs = []
-
-        for tape_no in tape_nos:
-            left_tab = f"Tape {tape_no}: "
-            left_tabs.append(left_tab)
-
-        if left_tabs:
-            max_left_tab_width = max([len(tab) for tab in left_tabs])
-        else:
-            max_left_tab_width = 0
-
-        left_sidebar = RenderFrame(left_tabs)
-        content_width = length - max_left_tab_width
-        tape_view_lines: list[TapeRenderFrame] = []
-
-        for tape_no in tape_nos:
-            tape = self._tapes[tape_no]
-            tape_line = tape.render_line(
-                start_position=start_position,
-                length=content_width,
-                cell_width=cell_width
-            )
-            tape_view_lines.append(tape_line)
-
-        # TODO: align by actual space consumed by tape
-        num_cells = tape_view_lines[0].num_cells if tape_view_lines else 0
-        # width of text actually consumed by tape cells, excluding padding
-        tape_content_width = tape_view_lines[0].get_space_consumed()
-        start_pos_str = str(start_position) + '<'
-        end_pos_str = '>' + str(start_position + num_cells - 1)
-
-        buffer_len = tape_content_width - len(start_pos_str) - len(end_pos_str)
-        position_str = (
-            ' ' * left_sidebar.get_width() +
-            start_pos_str +
-            ' ' * buffer_len +
-            end_pos_str +
-            ' ' * (content_width - tape_content_width)
-        )
-
-        tapes_frame = RenderFrame.join_vertically(tape_view_lines)
-        return RenderFrame.join_vertically([
-            RenderFrame.from_line(position_str),
-            RenderFrame.join_horizontally([
-                left_sidebar, tapes_frame
-            ])
-        ])
-
-    def get_range(self):
-        """
-        Get the range for which tape cell data is currently encoded
-        in the tape
-        :return:
-        """
-        min_pos, max_pos = 0, 0
-
-        for tape in self._tapes.values():
-            tape_min, tape_max = tape.get_range()
-            min_pos = min(min_pos, tape_min)
-            max_pos = max(max_pos, tape_max)
-
-        return min_pos, max_pos
-
-
-@dataclasses.dataclass
-class WriteRecord(object):
-    origin_product: PyMultiTapeProduct
-    write_target: tuple[TapeNo, int]  # (tape_no, position)
-    tape_cell_state: TapeCellState
-    # for debugging purposes (to trace originating product)
-    annotation: str = ''
-
-    def log(self):
-        print(
-            f'{self.origin_product} | {self.write_target} '
-            f'-> {self.tape_cell_state} ({self.annotation})'
-        )
 
 
 @dataclasses.dataclass
@@ -699,7 +535,7 @@ class ComposeTapesResult(object):
 
 
 class MultiTapeBuilder(object):
-    def __init__(self, multi_tape_automata: MultiTapeAutomata):
+    def __init__(self, multi_tape_automata: PyMultiTapeAutomata):
         self._automata = multi_tape_automata
         # tape state -> (relative) position -> overlapping tape state
         # (tape_no, state) -> int -> (tape_no, state)
@@ -723,10 +559,15 @@ class MultiTapeBuilder(object):
         return self._automata.rightmost_extent
 
     def get_tape_nos(self) -> list[TapeNo]:
-        return self._automata.get_tape_nos()
+        return [
+            TapeNo(tape_no) for tape_no in
+            self._automata.get_tape_nos()
+        ]
 
     def _get_prod_to_state_map(self) -> ProductWritesMap:
-        return self._automata.get_prod_to_state_map()
+        return ProductWritesMap.from_pairs(
+            self._automata.get_prod_to_state_map()
+        )
 
     def declare_initial_group_overlaps(
         self, overlap_states: set[MultiTapeState]

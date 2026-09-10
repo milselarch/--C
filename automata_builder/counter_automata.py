@@ -5,9 +5,10 @@ import os
 from typing import Final, Callable, Sequence
 from py_ca_compiler import D, PyMultiTapeAutomata, PyProcessStepResult
 
+from automata_builder.rule_generator import BLANK_INT
 from automata_builder.rule_generator_multitape import (
     MultiTapeTransitionsGroup, TapeNo, TapeCellState,
-    MultiTapeRuleGenerator, MultiTapeState, BLANK_INT, VOID_STATE
+    MultiTapeRuleGenerator, MultiTapeState, VOID_STATE
 )
 
 DATA_TAPE: Final[TapeNo] = TapeNo(0)
