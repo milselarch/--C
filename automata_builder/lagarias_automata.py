@@ -6,105 +6,13 @@ import math
 from fractions import Fraction
 from typing import Callable, Final
 
-try:
-    from py_ca_compiler import D, PyMultiTapeAutomata, PyProcessStepResult
-    from automata_builder.rule_generator_multitape import (
-        BLANK_INT,
-        MultiTapeRuleGenerator,
-        MultiTapeState,
-        MultiTapeTransitionsGroup,
-        TapeCellState,
-        VOID_STATE,
-    )
-    HAS_AUTOMATA_RUNTIME: Final[bool] = True
-except ModuleNotFoundError:
-    HAS_AUTOMATA_RUNTIME = False
-    BLANK_INT = -1
+from automata_builder.rule_generator import TapeNo, TapeCellState, VOID_STATE, BLANK_INT
+from py_ca_compiler import D, PyMultiTapeAutomata, PyProcessStepResult
 
-    @dataclasses.dataclass(frozen=True)
-    class D(object):
-        position: int
-        tape_no: int
-        state: int
-
-    class PyProcessStepResult(object):
-        def __repr__(self) -> str:
-            return "PyProcessStepResult(fallback=True)"
-
-    class PyMultiTapeAutomata(object):
-        def __repr__(self) -> str:
-            return "PyMultiTapeAutomata(fallback_unavailable)"
-
-    class TapeCellState(int):
-        def __eq__(self, other: int):
-            return int(self) == int(other)
-
-        def __hash__(self):
-            return hash(int(self))
-
-    @dataclasses.dataclass(frozen=True)
-    class MultiTapeState(object):
-        tape_no: int
-        tape_cell_state: int
-
-    @dataclasses.dataclass
-    class _FallbackTransition(object):
-        input_terms: tuple[D, ...]
-        output_tape_no: int
-        output_cell_state: int
-        annotation: str
-
-    @dataclasses.dataclass
-    class MultiTapeTransitionsGroup(object):
-        require_annotation: bool = False
-        transitions: list[_FallbackTransition] = dataclasses.field(
-            default_factory=list
-        )
-
-        def add_transition(
-            self,
-            input_terms: tuple[D, ...],
-            output_tape_no: int,
-            output_cell_state: int,
-            validate_void: bool = True,
-            validate_halt: bool = True,
-            annotation: str = '',
-        ):
-            _ = (validate_void, validate_halt)
-            if self.require_annotation and not annotation:
-                raise ValueError("Annotation expected")
-
-            self.transitions.append(
-                _FallbackTransition(
-                    input_terms=input_terms,
-                    output_tape_no=output_tape_no,
-                    output_cell_state=output_cell_state,
-                    annotation=annotation,
-                )
-            )
-
-        def __len__(self) -> int:
-            return len(self.transitions)
-
-    class MultiTapeRuleGenerator(object):
-        @staticmethod
-        def generate_equations(
-            transitions_group: MultiTapeTransitionsGroup,
-            require_annotations: bool = False,
-        ) -> dict:
-            _ = (transitions_group, require_annotations)
-            return {}
-
-    VOID_STATE: Final[TapeCellState] = TapeCellState(0)
-
-
-class TapeNo(int):
-    def __eq__(self, other: int):
-        return int(self) == int(other)
-
-    def __hash__(self):
-        return hash(int(self))
-
+from automata_builder.rule_generator_multitape import (
+    MultiTapeRuleGenerator, MultiTapeTransitionsGroup
+)
+from automata_builder.tape_overlaps import MultiTapeState
 
 INPUT_DATA_TAPE: Final[TapeNo] = TapeNo(0)
 CONTROL_TAPE: Final[TapeNo] = TapeNo(1)
@@ -547,22 +455,19 @@ class LagariasAutomataRunner(object):
 
         self.transitions_group = self.builder.build_timestep_transitions_group()
         self.state_eq_map: dict = {}
-        self.multi_tape_automata: PyMultiTapeAutomata | None = None
-
-        if HAS_AUTOMATA_RUNTIME:
-            self.state_eq_map = MultiTapeRuleGenerator.generate_equations(
-                self.transitions_group
-            )
-            self.multi_tape_automata = PyMultiTapeAutomata(self.state_eq_map)
-            self.multi_tape_automata.init_tapes(
-                tape_nos=sorted(self.tape_layout.values())
-            )
-            self.multi_tape_automata.write_region(
-                position=self.initial_write_start,
-                end_position=self.initial_write_end,
-                data=[MultiTapeState(INPUT_DATA_TAPE, INPUT_DATA_STATE)],
-            )
-            self._write_snapshot_to_automata(self.execution_snapshots[0])
+        self.state_eq_map = MultiTapeRuleGenerator.generate_equations(
+            self.transitions_group
+        )
+        self.multi_tape_automata = PyMultiTapeAutomata(self.state_eq_map)
+        self.multi_tape_automata.init_tapes(
+            tape_nos=sorted(self.tape_layout.values())
+        )
+        self.multi_tape_automata.write_region(
+            position=self.initial_write_start,
+            end_position=self.initial_write_end,
+            data=[MultiTapeState(INPUT_DATA_TAPE, INPUT_DATA_STATE)],
+        )
+        self._write_snapshot_to_automata(self.execution_snapshots[0])
 
         self._sync_tape_registers_from_snapshot(self.execution_snapshots[0])
 
@@ -945,12 +850,7 @@ class LagariasAutomataRunner(object):
                 )
 
     def step(self, verbose: bool = False) -> PyProcessStepResult:
-        if self.multi_tape_automata is not None:
-            step_result = self.multi_tape_automata.step(verbose=verbose)
-        else:
-            _ = verbose
-            step_result = PyProcessStepResult()
-
+        step_result = self.multi_tape_automata.step(verbose=verbose)
         if self.current_snapshot_index < self.final_snapshot_index:
             self.current_snapshot_index += 1
 
