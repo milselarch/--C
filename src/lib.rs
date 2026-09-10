@@ -1,21 +1,11 @@
 use pyo3::prelude::*;
-use crate::automata::py_rule_generator_multitape::{
-    PyBiDirectionalMultiTape, PyBidirectionalTape, PyMultiTapeAutomata, PyMultiTapeState,
-    PyProcessStepResult, PyRenderFrame, PyWriteRecord,
-};
-use crate::automata::py_single_tape_automata::{
-    PySingleTapeAutomata, PySingleTapeProcessStepResult, PySingleTapeWriteRecord
-};
 use crate::potato_cpu::py_potato_cpu_tester::PyPotatoCPUTester;
-use crate::automata::py_terms::{A, PyProduct, PyExpression};
-use crate::automata::py_terms_multitape::{PyMultiTapeExpression, PyMultiTapeProduct, D};
 
 pub mod lexer;
 pub mod potato_cpu;
 pub mod parser;
 pub mod tacky;
 pub mod asm_gen;
-pub mod automata;
 pub mod constants;
 
 /// Formats the sum of two numbers as string.
@@ -28,25 +18,5 @@ fn sum_as_string(a: usize, b: usize) -> PyResult<String> {
 fn py_ca_compiler(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(sum_as_string, module)?)?;
     module.add_class::<PyPotatoCPUTester>()?;
-
-    module.add_class::<A>()?;
-    module.add_class::<PyProduct>()?;
-    module.add_class::<PyExpression>()?;
-
-    module.add_class::<D>()?;
-    module.add_class::<PyMultiTapeProduct>()?;
-    module.add_class::<PyMultiTapeExpression>()?;
-
-    module.add_class::<PyMultiTapeState>()?;
-    module.add_class::<PyRenderFrame>()?;
-    module.add_class::<PyBidirectionalTape>()?;
-    module.add_class::<PyBiDirectionalMultiTape>()?;
-    module.add_class::<PyWriteRecord>()?;
-    module.add_class::<PyProcessStepResult>()?;
-    module.add_class::<PyMultiTapeAutomata>()?;
-
-    module.add_class::<PySingleTapeWriteRecord>()?;
-    module.add_class::<PySingleTapeProcessStepResult>()?;
-    module.add_class::<PySingleTapeAutomata>()?;
     Ok(())
 }

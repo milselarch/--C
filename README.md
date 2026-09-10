@@ -32,15 +32,6 @@ For testing things related to the Potato CPU:
 5. build and install the potato CPU - `maturin develop --release`
 6. install this project as an editable package - `python -m pip install -e .`  
 
-### Automata Builder
-1. Run test scripts for automata builder like as follows
-   - Make sure to run `python -m pip install -e .` to install 
-     `automata_builder` as an editable package first
-   - Run `python -m automata_builder.tests.test_counter_automata` to 
-     execute `automata_builder/test_counter_automata.py` 
-2. Execute counter automata unittests with
-   - `python -m unittest discover -s unittests`
-
 ## Examples
 
 Test compilation on all test cases in chapter 2:
@@ -74,20 +65,12 @@ Supported stages:
 - codegen
 
 ## TODO
-- design counter automata that operates within data range
-- add unittest for single-tape compiled automata
 - implement tacky + code gen for relational operators
 - support chapter 2 test suit when targeting Potato CPU
 - implement assembly gen for relational operators
-- implement multi-tape cellular automata codegen
-- implement multi-tape cellular automata composition
-- implement web automata visualizer tool
-- implement TUI for automata visualization
 - add annotated blocks for assembly generated
-- port cellular automata simulator to rust
 
 # DONE
-- multi-tape to single-tape cellular automata compiler
 - support chapter 1 test suite when targeting Potato CPU
 - add precedence climbing for expressions
 - implement tacky IR generation
