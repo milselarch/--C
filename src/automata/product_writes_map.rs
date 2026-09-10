@@ -1,13 +1,13 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 use indexmap::IndexMap;
 use indexmap::IndexSet;
-
-use crate::automata::tape_overlaps::MultiTapeState;
+use crate::automata::rule_generator::VOID_STATE;
+use crate::automata::tape_overlaps::{MultiTapeState, TapeOverlaps};
 use crate::automata::terms::CellState;
 use crate::automata::terms_multitape::{
-    AbstractMultiTapeExpression, MultiTapeProduct, TapeNo,
+    AbstractMultiTapeExpression, MultiTapeProduct, MultiTapeTerm, TapeNo
 };
 
 /// Writes performed by a single product: `tape_no -> output tape cell state`.
@@ -49,6 +49,20 @@ impl fmt::Display for ProductWritesError {
     }
 }
 impl std::error::Error for ProductWritesError {}
+
+/// - `writable`: there are products that can produce this state
+/// - `deletable`: there are products that can transition away from it
+/// - `instant_delete`: every instance is immediately deleted, i.e. there is
+///   a rule `state -> other_state` with no path back to `state`
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub struct MultiTapeStateAttributes {
+    pub writable: bool,
+    pub deletable: bool,
+    pub instant_delete: bool,
+}
+
+pub type StateAttributesMap = BTreeMap<MultiTapeState, MultiTapeStateAttributes>;
+
 
 /// map `product -> tape_no -> output tape cell state`
 ///
@@ -231,6 +245,447 @@ impl ProductWritesMap {
             }
         }
         input_state_to_prod
+    }
+}
+
+impl ProductWritesMap {
+    /// Python `from_pairs`.
+    pub fn from_pairs(
+        pairs: Vec<(MultiTapeProduct, TapeWrites)>,
+    ) -> Result<Self, ProductWritesError> {
+        let mut map = ProductWritesMap::new();
+        for (product, writes) in pairs {
+            for (tape_no, tape_cell_state) in writes.iter() {
+                map._insert(product.copy(), *tape_no, *tape_cell_state)?;
+            }
+        }
+        Ok(map)
+    }
+
+    /// All products with the same shape as `target_product` but whose input
+    /// term offsets are shifted by a single constant offset.
+    ///
+    /// e.g. `D(0,1,1)*D(1,2,1)` and `D(1,1,1)*D(2,2,1)` are translational
+    /// variants (the second is shifted by `+1`).
+    ///
+    /// Returns `(variant, offset_diff)` pairs.
+    pub fn get_translated_variants(
+        &self,
+        target_product: &MultiTapeProduct,
+        offset_whitelist: Option<&BTreeSet<i64>>,
+    ) -> Result<IndexSet<(MultiTapeProduct, i64)>, ProductWritesError> {
+        if !self.contains_product(target_product) {
+            return Err(ProductWritesError::MissingProduct {
+                product: target_product._to_string("D"),
+            });
+        }
+
+        let mut source_terms = target_product.to_flat_terms();
+        source_terms.sort();
+
+        let mut variants: IndexSet<(MultiTapeProduct, i64)> = IndexSet::new();
+
+        for candidate in self.products() {
+            let mut candidate_terms = candidate.to_flat_terms();
+            if candidate_terms.len() != source_terms.len() {
+                continue;
+            }
+            candidate_terms.sort();
+
+            let mut offset_diffs: BTreeSet<i64> = BTreeSet::new();
+            for (source_term, candidate_term) in
+                source_terms.iter().zip(candidate_terms.iter())
+            {
+                offset_diffs.insert(candidate_term.position - source_term.position);
+            }
+
+            // a single shared delta across every term == a pure translation
+            if offset_diffs.len() != 1 {
+                continue;
+            }
+            let offset_diff = *offset_diffs.iter().next().unwrap();
+
+            if let Some(whitelist) = offset_whitelist {
+                if !whitelist.is_empty() && !whitelist.contains(&offset_diff) {
+                    continue;
+                }
+            }
+
+            variants.insert((candidate.copy(), offset_diff));
+        }
+
+        Ok(variants)
+    }
+
+    /// Remove every product that contains `state` among its input terms.
+    pub fn extinct_input_state(
+        &mut self, state: MultiTapeState,
+    ) -> Result<usize, ProductWritesError> {
+        if self.frozen {
+            return Err(ProductWritesError::Frozen);
+        }
+
+        let doomed: Vec<MultiTapeProduct> = self
+            .products()
+            .filter(|product| {
+                product.to_flat_terms().iter().any(|term| {
+                    let (tape_no, tape_cell_state) = term.state;
+                    MultiTapeState::new(tape_no, tape_cell_state) == state
+                })
+            })
+            .map(|product| product.copy())
+            .collect();
+
+        let num_removed = doomed.len();
+        for product in doomed {
+            self.prod_to_state_map.shift_remove(&product);
+        }
+        Ok(num_removed)
+    }
+
+    /// Remove all input products that become permanently unsatisfiable,
+    /// along with their translational variants.
+    pub fn purge_unsatisfiable_products(
+        &mut self, state_attributes_map: &StateAttributesMap,
+    ) -> Result<IndexSet<MultiTapeProduct>, ProductWritesError> {
+        if self.frozen {
+            return Err(ProductWritesError::Frozen);
+        }
+
+        let all_products: Vec<MultiTapeProduct> =
+            self.products().map(|product| product.copy()).collect();
+        let mut products_to_delete: IndexSet<MultiTapeProduct> = IndexSet::new();
+
+        for product in all_products.iter() {
+            let becomes_unsatisfiable =
+                self.does_product_become_unsatisfiable(product, state_attributes_map)?;
+            if !becomes_unsatisfiable {
+                continue;
+            }
+
+            products_to_delete.insert(product.copy());
+            for (variant, _) in self.get_translated_variants(product, None)? {
+                products_to_delete.insert(variant);
+            }
+        }
+
+        for product in products_to_delete.iter() {
+            self.prod_to_state_map.shift_remove(product);
+        }
+
+        Ok(products_to_delete)
+    }
+
+    /// Whether `product` is guaranteed to never be satisfiable again.
+    ///
+    /// This holds when:
+    /// 1. every input term outside the write position is unwritable, and
+    /// 2. some input at offset 0 is unwritable, and
+    /// 3. that input is replaced by an undeletable state, and
+    /// 4. the replacement differs from the input state.
+    ///
+    /// (1) and (2) mean no new instances can form elsewhere; (3) and (4) mean
+    /// every current match transitions away permanently.
+    pub fn does_product_become_unsatisfiable(
+        &self,
+        product: &MultiTapeProduct,
+        state_attributes_map: &StateAttributesMap,
+    ) -> Result<bool, ProductWritesError> {
+        let product_writes = self.get(product).ok_or_else(|| {
+            ProductWritesError::MissingProduct { product: product._to_string("D") }
+        })?;
+
+        let mut has_transition_to_unsatisfiability = false;
+        let mut has_input_terms_along_output_offset = false;
+
+        for input_term in product.to_flat_terms() {
+            let (input_tape_no, input_tape_cell_state) = input_term.state;
+            let input_state = MultiTapeState::new(input_tape_no, input_tape_cell_state);
+
+            let input_attrs = match state_attributes_map.get(&input_state) {
+                Some(attrs) => *attrs,
+                None => continue,
+            };
+
+            if input_term.position != 0 {
+                if input_attrs.writable {
+                    /*
+                    An input term off the output position can be spawned from
+                    elsewhere, so the product may become satisfiable again.
+                    */
+                    return Ok(false);
+                }
+                continue;
+            }
+
+            has_input_terms_along_output_offset = true;
+
+            // output does not touch this term's tape -> nothing to check
+            let output_tape_cell_state = match product_writes.get(&input_tape_no) {
+                Some(state) => *state,
+                None => continue,
+            };
+            let output_state = MultiTapeState::new(input_tape_no, output_tape_cell_state);
+
+            let output_attrs = match state_attributes_map.get(&output_state) {
+                Some(attrs) => *attrs,
+                None => continue,
+            };
+
+            has_transition_to_unsatisfiability |= !input_attrs.writable
+                && !output_attrs.deletable
+                && input_state != output_state;
+        }
+
+        if !has_input_terms_along_output_offset {
+            /*
+            Every input term is offset away from the output and none of them
+            can be spawned moving forward.
+            */
+            return Ok(true);
+        }
+
+        Ok(has_transition_to_unsatisfiability)
+    }
+
+    /// Python `build_input_products`.
+    pub fn build_input_products(&self) -> IndexSet<MultiTapeProduct> {
+        self.products().map(|product| product.copy()).collect()
+    }
+
+    /// Python `build_all_state_attrs_map`.
+    pub fn build_all_state_attrs_map(
+        &self,
+        extant_states: Option<&BTreeSet<MultiTapeState>>,
+        tape_overlaps: &TapeOverlaps,
+    ) -> StateAttributesMap {
+        let mut state_attributes_map: StateAttributesMap = BTreeMap::new();
+
+        for state in self.get_states_set() {
+            let attributes =
+                self.get_state_attributes(state, extant_states, tape_overlaps);
+            state_attributes_map.insert(state, attributes);
+        }
+        state_attributes_map
+    }
+
+    /// `extant_states == None` yields attributes valid across all future
+    /// timesteps; otherwise they are valid only for the timestep in which
+    /// exactly those states exist.
+    pub fn get_state_attributes(
+        &self,
+        source_state: MultiTapeState,
+        extant_states: Option<&BTreeSet<MultiTapeState>>,
+        tape_overlaps: &TapeOverlaps,
+    ) -> MultiTapeStateAttributes {
+        let source_tape_cell_state = source_state.tape_cell_state;
+        let transitioned_states =
+            self.get_same_tape_states_transitioned_to(source_state, tape_overlaps);
+
+        let mut writable = false;
+        let mut deletable = false;
+
+        for (product, writes_map) in self.iter() {
+            if let Some(extant) = extant_states {
+                // a product needing a non-existent input state is unsatisfiable
+                let is_unsatisfiable = product.to_flat_terms().iter().any(|term| {
+                    let (tape_no, tape_cell_state) = term.state;
+                    !extant.contains(&MultiTapeState::new(tape_no, tape_cell_state))
+                });
+                if is_unsatisfiable {
+                    continue;
+                }
+            }
+
+            let mut source_state_written = false;
+            for (tape_no, tape_cell_state) in writes_map.iter() {
+                if MultiTapeState::new(*tape_no, *tape_cell_state) == source_state {
+                    source_state_written = true;
+                }
+            }
+
+            // product writes to source_state's tape, but a different state
+            let mut writes_away_from_source_state = false;
+            // product maps source_state back onto itself
+            let mut is_idempotent_transition = false;
+
+            for input_term in product.to_flat_terms() {
+                if input_term.position != 0 {
+                    continue;
+                }
+                let (input_tape_no, input_tape_cell_state) = input_term.state;
+                if input_tape_no != source_state.tape_no {
+                    continue;
+                }
+                if input_tape_cell_state != source_state.tape_cell_state {
+                    continue;
+                }
+
+                let output_tape_cell_state = writes_map
+                    .get(&source_state.tape_no)
+                    .copied()
+                    .unwrap_or(source_state.tape_cell_state);
+
+                if source_state.tape_cell_state != output_tape_cell_state {
+                    writes_away_from_source_state = true;
+                } else {
+                    is_idempotent_transition = true;
+                }
+            }
+
+            debug_assert!(
+                product._get_num_terms() != 1
+                    || product.to_flat_terms()[0].state.1 != VOID_STATE,
+                "VOID STATE CANNOT AUTO TRANSITION AWAY - {}",
+                product._to_string("D")
+            );
+
+            writable |= source_state_written && !is_idempotent_transition;
+            deletable |= writes_away_from_source_state;
+        }
+
+        let instant_delete = !transitioned_states.contains(&source_tape_cell_state)
+            && source_tape_cell_state != VOID_STATE
+            && !writable;
+
+        MultiTapeStateAttributes { writable, deletable, instant_delete }
+    }
+
+    /// For each offset, the cartesian product of the states reachable on each
+    /// tape at that offset, as concrete terms.
+    pub fn build_flat_offset_path_combos(
+        source_state: MultiTapeState, tape_overlaps: &TapeOverlaps,
+    ) -> Vec<Vec<MultiTapeTerm>> {
+        let offset_overlaps = match tape_overlaps.get(&source_state) {
+            Some(overlaps) => overlaps,
+            None => return vec![],
+        };
+
+        let mut combos: Vec<Vec<MultiTapeTerm>> = Vec::new();
+
+        for (offset, target_states) in offset_overlaps.iter() {
+            let mut states_by_tape: BTreeMap<TapeNo, BTreeSet<CellState>> =
+                BTreeMap::new();
+            for target_state in target_states.iter() {
+                states_by_tape
+                    .entry(target_state.tape_no)
+                    .or_default()
+                    .insert(target_state.tape_cell_state);
+            }
+
+            // iterative cartesian product across tapes
+            let mut offset_combos: Vec<Vec<MultiTapeTerm>> = vec![vec![]];
+            for (tape_no, cell_states) in states_by_tape.iter() {
+                let mut next_combos: Vec<Vec<MultiTapeTerm>> =
+                    Vec::with_capacity(offset_combos.len() * cell_states.len());
+
+                for combo in offset_combos.iter() {
+                    for cell_state in cell_states.iter() {
+                        let mut extended = combo.clone();
+                        extended.push(MultiTapeTerm::new(
+                            *offset,
+                            (*tape_no, *cell_state),
+                            false,
+                        ));
+                        next_combos.push(extended);
+                    }
+                }
+                offset_combos = next_combos;
+            }
+
+            combos.extend(offset_combos);
+        }
+
+        combos
+    }
+
+    /// Every state `source_state` could hold at the same position after one
+    /// timestep.
+    pub fn get_same_tape_states_transitioned_to(
+        &self, source_state: MultiTapeState, tape_overlaps: &TapeOverlaps,
+    ) -> BTreeSet<CellState> {
+        let source_tape_no = source_state.tape_no;
+        let source_tape_cell_state = source_state.tape_cell_state;
+
+        if !tape_overlaps.contains(&source_state) {
+            return BTreeSet::from([source_tape_cell_state]);
+        }
+
+        let source_term =
+            MultiTapeTerm::new(0, (source_tape_no, source_tape_cell_state), false);
+        let mut transitioned_states: BTreeSet<CellState> = BTreeSet::new();
+
+        for (product, writes_map) in self.iter() {
+            let input_terms = product.to_flat_terms();
+
+            let product_is_satisfiable = input_terms.iter().all(|term| {
+                let (tape_no, tape_cell_state) = term.state;
+                tape_overlaps.contains(&MultiTapeState::new(tape_no, tape_cell_state))
+            });
+            if !product_is_satisfiable {
+                continue;
+            }
+            if !input_terms.contains(&source_term) {
+                continue;
+            }
+
+            if let Some(write_state) = writes_map.get(&source_tape_no) {
+                transitioned_states.insert(*write_state);
+            }
+        }
+
+        /*
+        If no input product applies to some combination of states that can
+        actually co-occur, then source_state may persist unchanged.
+        */
+        let mut has_path_transition_to_same_state = false;
+        let offset_path_combos =
+            Self::build_flat_offset_path_combos(source_state, tape_overlaps);
+
+        'combos: for combo in offset_path_combos.iter() {
+            for (product, writes_map) in self.iter() {
+                let input_terms = product.to_flat_terms();
+                if !input_terms.contains(&source_term) {
+                    continue;
+                }
+
+                let input_tapes: BTreeSet<TapeNo> =
+                    input_terms.iter().map(|term| term.state.0).collect();
+
+                let written_state = writes_map
+                    .get(&source_tape_no)
+                    .copied()
+                    .unwrap_or(source_tape_cell_state);
+                if written_state != source_tape_cell_state {
+                    continue;
+                }
+
+                let mut product_covers_combo = true;
+                for term in combo.iter() {
+                    /*
+                    A tape the product never reads cannot invalidate the match.
+                    */
+                    if !input_tapes.contains(&term.state.0) {
+                        continue;
+                    }
+                    if !input_terms.contains(term) {
+                        product_covers_combo = false;
+                        break;
+                    }
+                }
+
+                if product_covers_combo {
+                    has_path_transition_to_same_state = true;
+                    break 'combos;
+                }
+            }
+        }
+
+        if has_path_transition_to_same_state || transitioned_states.is_empty() {
+            transitioned_states.insert(source_tape_cell_state);
+        }
+
+        transitioned_states
     }
 }
 
