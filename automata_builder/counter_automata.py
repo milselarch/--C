@@ -570,11 +570,11 @@ class CounterAutomataRunner(object):
         self.initial_write_end = initial_write_end
         self.multi_tape_automata = PyMultiTapeAutomata(self.state_eq_map)
 
-        init_tapes = [DATA_TAPE, SIGNALS_TAPE, CARRY_TAPE]
+        self.init_tapes = [DATA_TAPE, SIGNALS_TAPE, CARRY_TAPE]
         if apply_reduction:
-            init_tapes.append(REDUCER_TAPE)
+            self.init_tapes.append(REDUCER_TAPE)
 
-        self.multi_tape_automata.init_tapes(tape_nos=init_tapes)
+        self.multi_tape_automata.init_tapes(tape_nos=self.init_tapes)
         self.multi_tape_automata.write_region(
             position=self.initial_write_start,
             end_position=self.initial_write_end,

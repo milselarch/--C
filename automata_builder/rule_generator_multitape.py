@@ -352,6 +352,26 @@ class MultiTapeStatePathRemap(object):
 
         return self.tape_state_path_remap[state_path]
 
+    def remap_from_product_to_term(self, product: PyMultiTapeProduct) -> A:
+        terms = product.get_flat_terms()
+        positions = set([term.get_position() for term in terms])
+        if len(positions) != 1:
+            raise Exception(
+                f"Cannot remap from product with multiple positions: "
+                f"{product}"
+            )
+
+        position = positions.pop()
+        multi_tape_states = [MultiTapeState.from_term(term) for term in terms]
+        remapped_cell_state = self.remap(tuple(multi_tape_states))
+        return A(position=position, state=remapped_cell_state)
+
+    def remap_from_product_to_state(
+        self, product: PyMultiTapeProduct
+    ) -> TapeCellState:
+        remapped_term = self.remap_from_product_to_term(product)
+        return TapeCellState(remapped_term.get_state())
+
     def get_all_remap_states(self) -> set[TapeCellState]:
         """
         Get all remapped tape cell state values that
@@ -482,6 +502,14 @@ class ComposeTapesResult(object):
     def count_unique_states(self):
         return len(self.state_remap.get_all_remap_states())
 
+    def remap_from_product_to_term(self, product: PyMultiTapeProduct) -> A:
+        return self.state_remap.remap_from_product_to_term(product)
+
+    def remap_from_product_to_state(
+        self, product: PyMultiTapeProduct
+    ) -> TapeCellState:
+        return self.state_remap.remap_from_product_to_state(product)
+
     def remap_prod_to_multi_tape(
         self, input_product: PyProduct
     ) -> Result[PyMultiTapeProduct, TapeCellState]:
@@ -509,6 +537,13 @@ class ComposeTapesResult(object):
     def remap_term_to_multi_tape(
         self, input_term: A
     ) -> Result[PyMultiTapeProduct, TapeCellState]:
+        """
+        Resolve a term in the composed automata to a
+        multi-tape product with the corresponding tape states
+        for each tape in the original multi-tape automata
+        :param input_term:
+        :return:
+        """
         collected_global_terms: list[D] = []
         position = input_term.get_position()
         global_tape_state = TapeCellState(input_term.get_state())
